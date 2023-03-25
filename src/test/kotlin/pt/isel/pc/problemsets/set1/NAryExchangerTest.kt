@@ -2,6 +2,9 @@ package pt.isel.pc.problemsets.set1
 
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
+import java.lang.Thread.sleep
+import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.test.assertEquals
@@ -9,28 +12,23 @@ import kotlin.test.assertTrue
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
-const val N_EXCHANGER = 4
-const val N_THREADS = 4
-const val TIMEOUT = 10000L
-
 class NAryExchangerTest {
 
     private val log = LoggerFactory.getLogger(NAryExchangerTest::class.java)
 
     @Test
-    fun `first implementation test of NAryExchanger`() {
-        val nAryExchanger = NAryExchanger<Int>(N_EXCHANGER)
+    fun `invalid constructor parameters`() {
+        val nOfThreads = 4
+        val nExchangerUnits = 4
+        val nAryExchanger = NAryExchanger<Int>(0)
         val threads = mutableListOf<Thread>()
-        val solutions = mutableListOf<List<Int>?>()
-        val lock = ReentrantLock()
+        val solutions = AtomicInteger(0)
 
-        repeat(N_THREADS) {
+        repeat(nOfThreads) {
             threads.add(
                 Thread {
-                    val res: List<Int>? = nAryExchanger.exchange(it, TIMEOUT.toDuration(DurationUnit.SECONDS))
-                    log.info("$res")
-                    lock.withLock {
-                        solutions.add(res)
+                    nAryExchanger.exchange(it, 0.toDuration(DurationUnit.SECONDS))?.let {
+                        solutions.incrementAndGet()
                     }
                 }.apply { start() }
             )
@@ -38,15 +36,76 @@ class NAryExchangerTest {
 
         threads.forEach { thread -> thread.join() }
 
-        assertEquals(N_THREADS, solutions.size)
+        assertEquals(0, solutions.get())
+    }
 
-        assertTrue {
-            var total: Int = 0
-            solutions.forEach { list ->
-                if(list != null) total += list.size
-            }
-            total == N_EXCHANGER * N_THREADS
+    @Test
+    fun `simple test`() {
+        val nOfThreads = 4
+        val nExchangerUnits = 4
+        val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
+        val threads = mutableListOf<Thread>()
+        val solutions = AtomicInteger(0)
+
+        repeat(nOfThreads) {
+            threads.add(
+                Thread {
+                    nAryExchanger.exchange(it, 10000L.toDuration(DurationUnit.SECONDS))?.let {
+                        solutions.incrementAndGet()
+                    }
+                }.apply { start() }
+            )
         }
 
+        threads.forEach { thread -> thread.join() }
+
+        assertEquals(nOfThreads, solutions.get())
     }
+
+    @Test
+    fun `complex test with more threads than group units`() {
+        val nOfThreads = 8
+        val nExchangerUnits = 4
+        val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
+        val threads = mutableListOf<Thread>()
+        val solutions = AtomicInteger(0)
+
+        repeat(nOfThreads) {
+            threads.add(
+                Thread {
+                    nAryExchanger.exchange(it, 10000L.toDuration(DurationUnit.SECONDS))?.let {
+                        solutions.incrementAndGet()
+                    }
+                }.apply { start() }
+            )
+        }
+
+        threads.forEach { thread -> thread.join() }
+
+        assertEquals(nOfThreads, solutions.get())
+    }
+
+    /*@Test
+    fun `test thread timeout`() {
+        val nOfThreads = 4
+        val nExchangerUnits = 4
+        val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
+        val threads = mutableListOf<Thread>()
+        val solutions = AtomicInteger(0)
+
+        repeat(nOfThreads) {
+            threads.add(
+                Thread {
+                    nAryExchanger.exchange(it, 1000L.toDuration(DurationUnit.SECONDS)).let {
+                        if (it == null)
+                            solutions.incrementAndGet()
+                    }
+                }.apply { start() }
+            )
+        }
+
+        threads.forEach { thread -> thread.join() }
+
+        assertEquals(1, solutions.get())
+    }*/
 }

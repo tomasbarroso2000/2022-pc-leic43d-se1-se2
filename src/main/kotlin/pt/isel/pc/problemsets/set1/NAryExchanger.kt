@@ -20,12 +20,12 @@ class NAryExchanger<T>(groupSize: Int) {
     private var availableGroupSize: Int = groupSize
 
     private class Request<T>(
-        var isDone: Boolean = false,
+        var values: MutableList<T> = mutableListOf(),
         val value: T
     )
 
-    private val requests = mutableListOf<Request<T>>()
-    private val values = mutableListOf<T>()
+    private var requests = mutableListOf<Request<T>>()
+    private val waiting = mutableListOf<Request<T>>()
 
     @Throws(InterruptedException::class)
     fun exchange(value: T, timeout: Duration): List<T>? {
@@ -38,29 +38,41 @@ class NAryExchanger<T>(groupSize: Int) {
             }
 
             val request = Request(value = value)
+
             requests.add(request)
-            values.add(value)
+
+            log.info("${requests.size}")
+
             //fast-path
-            if (requests.size >= availableGroupSize) {
+            if (requests.size == availableGroupSize) {
+                log.info("fast-path")
+                val temp = requests.map{it.value}.toMutableList()
 
                 repeat(availableGroupSize) { index ->
-                    values[index] = requests[index].value
-                    requests[index].isDone = true
+                    requests[index].values = temp
                 }
 
+                repeat(availableGroupSize) { index ->
+                    requests = mutableListOf<Request<T>>()
+                }
+
+                //requests.remove(request)
                 mCondition.signalAll()
-                requests.remove(request)
-                return values
+                return request.values
             }
 
             val dueTime = timeout.dueTime()
 
             while (true) {
                 try {
-                    mCondition.await(dueTime)
 
-                    if(request.isDone) {
-                        return values
+                    mCondition.await()
+
+                    if(request.values.size == availableGroupSize) {
+                        //requests.remove(request)
+                        log.info("${requests.size}")
+                        //mCondition.signalAll()
+                        return request.values
                     }
 
                     if (dueTime.isPast) return null
