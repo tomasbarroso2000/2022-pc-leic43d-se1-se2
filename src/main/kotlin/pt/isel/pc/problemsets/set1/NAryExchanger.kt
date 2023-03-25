@@ -13,72 +13,64 @@ const val MIN_GROUP_SIZE_VALUE = 2
 class NAryExchanger<T>(groupSize: Int) {
 
     private val log = LoggerFactory.getLogger(NAryExchanger::class.java)
-
     private val mLock: Lock = ReentrantLock()
     private val mCondition: Condition = mLock.newCondition()
-
     private var availableGroupSize: Int = groupSize
 
-    private class Request<T>(
-        var values: MutableList<T> = mutableListOf(),
-        val value: T
+    private class Request(
+        var isDone: Boolean = false
     )
 
-    private var requests = mutableListOf<Request<T>>()
-    private val waiting = mutableListOf<Request<T>>()
+    private var requests = mutableListOf<Request>()
+    private var values: MutableList<T> = mutableListOf()
 
     @Throws(InterruptedException::class)
     fun exchange(value: T, timeout: Duration): List<T>? {
         mLock.withLock {
 
-            if (availableGroupSize <= MIN_GROUP_SIZE_VALUE) return null
+            if (availableGroupSize <= MIN_GROUP_SIZE_VALUE ||
+                timeout.isZero
+            ) return null
 
-            if (timeout.isZero) {
-                return null
-            }
-
-            val request = Request(value = value)
-
+            val request = Request()
             requests.add(request)
-
-            log.info("${requests.size}")
+            values.add(value)
 
             //fast-path
             if (requests.size == availableGroupSize) {
-                log.info("fast-path")
-                val temp = requests.map{it.value}.toMutableList()
 
                 repeat(availableGroupSize) { index ->
-                    requests[index].values = temp
+                    requests[index].isDone = true
                 }
 
-                repeat(availableGroupSize) { index ->
-                    requests = mutableListOf<Request<T>>()
-                }
+                requests = mutableListOf()
 
-                //requests.remove(request)
                 mCondition.signalAll()
-                return request.values
+                return values
             }
 
-            val dueTime = timeout.dueTime()
+            //waiting path
+            var remainingNanos: Long = timeout.inWholeNanoseconds
 
             while (true) {
                 try {
+                    remainingNanos = mCondition.awaitNanos(remainingNanos)
 
-                    mCondition.await()
-
-                    if(request.values.size == availableGroupSize) {
-                        //requests.remove(request)
-                        log.info("${requests.size}")
-                        //mCondition.signalAll()
-                        return request.values
+                    if(request.isDone) {
+                        return values
                     }
 
-                    if (dueTime.isPast) return null
+                    values[0] = values[availableGroupSize]
                 } catch(e: InterruptedException) {
+                    requests.remove(request)
                     if(requests.isNotEmpty()) mCondition.signalAll()
                     throw e
+                }
+
+                if (remainingNanos <= 0) {
+                    // giving-up
+                    requests.remove(request)
+                    return null
                 }
 
             }

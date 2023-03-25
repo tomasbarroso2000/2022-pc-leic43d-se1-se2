@@ -2,13 +2,8 @@ package pt.isel.pc.problemsets.set1
 
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
-import java.lang.Thread.sleep
-import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
@@ -27,7 +22,7 @@ class NAryExchangerTest {
         repeat(nOfThreads) {
             threads.add(
                 Thread {
-                    nAryExchanger.exchange(it, 0.toDuration(DurationUnit.SECONDS))?.let {
+                    nAryExchanger.exchange(it, 10L.toDuration(DurationUnit.SECONDS))?.let {
                         solutions.incrementAndGet()
                     }
                 }.apply { start() }
@@ -50,7 +45,7 @@ class NAryExchangerTest {
         repeat(nOfThreads) {
             threads.add(
                 Thread {
-                    nAryExchanger.exchange(it, 10000L.toDuration(DurationUnit.SECONDS))?.let {
+                    nAryExchanger.exchange(it, 10L.toDuration(DurationUnit.SECONDS))?.let {
                         solutions.incrementAndGet()
                     }
                 }.apply { start() }
@@ -73,7 +68,7 @@ class NAryExchangerTest {
         repeat(nOfThreads) {
             threads.add(
                 Thread {
-                    nAryExchanger.exchange(it, 10000L.toDuration(DurationUnit.SECONDS))?.let {
+                    nAryExchanger.exchange(it, 10L.toDuration(DurationUnit.SECONDS))?.let {
                         solutions.incrementAndGet()
                     }
                 }.apply { start() }
@@ -81,13 +76,12 @@ class NAryExchangerTest {
         }
 
         threads.forEach { thread -> thread.join() }
-
         assertEquals(nOfThreads, solutions.get())
     }
 
-    /*@Test
+    @Test
     fun `test thread timeout`() {
-        val nOfThreads = 4
+        val nOfThreads = 5
         val nExchangerUnits = 4
         val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
         val threads = mutableListOf<Thread>()
@@ -96,7 +90,7 @@ class NAryExchangerTest {
         repeat(nOfThreads) {
             threads.add(
                 Thread {
-                    nAryExchanger.exchange(it, 1000L.toDuration(DurationUnit.SECONDS)).let {
+                    nAryExchanger.exchange(it, 10L.toDuration(DurationUnit.SECONDS)).let {
                         if (it == null)
                             solutions.incrementAndGet()
                     }
@@ -107,5 +101,5 @@ class NAryExchangerTest {
         threads.forEach { thread -> thread.join() }
 
         assertEquals(1, solutions.get())
-    }*/
+    }
 }
