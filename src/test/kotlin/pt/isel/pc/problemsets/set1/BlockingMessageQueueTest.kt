@@ -164,7 +164,6 @@ class BlockingMessageQueueTest {
         }
 
         threads.forEach { thread -> thread.join() }
-        
         assertNull(solutions.get())
     }
 }
