@@ -5,6 +5,8 @@ import pt.isel.pc.problemsets.set1.utils.isZero
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.time.Duration
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
 
 class ThreadPoolExecutor(
     private val maxThreadPoolSize: Int,
@@ -13,13 +15,13 @@ class ThreadPoolExecutor(
     private val mLock = ReentrantLock()
     private val mCondition = mLock.newCondition()
     private val requests: NodeLinkedList<Request> = NodeLinkedList()
-    private val threadPool: NodeLinkedList<WorkerThread> = NodeLinkedList()
+    private val threadPool: MutableList<WorkerThread> = mutableListOf()
 
     private class WorkerThread(
-        val runnable: Runnable,
+        var runnable: Runnable,
         val thread: Thread,
         var isDone: Boolean = false,
-        var remainingNanos: Long = 0
+        var totalNanos: Long = 0
     )
 
     private class Request(
@@ -33,10 +35,12 @@ class ThreadPoolExecutor(
         require(maxThreadPoolSize > 0 && !keepAliveTime.isZero)
 
         //fast path
-        if(requests.empty && threadPool.empty) {
-            val thread = threadPool.enqueue(WorkerThread(runnable = runnable, thread = Thread()))
-            thread.value.runnable.run()
-            thread.value.isDone = true
+        if(requests.empty && threadPool.isEmpty()) {
+            val thread = WorkerThread(runnable = runnable, thread = Thread(), totalNanos = System.currentTimeMillis())
+            threadPool.add(thread)
+            thread.runnable.run()
+            thread.isDone = true
+            mCondition.signalAll()
             return
         }
 
@@ -45,20 +49,36 @@ class ThreadPoolExecutor(
 
         while (true) {
             try {
-                //Talvez trocar threadPool por uma lista
-                var availableThread: WorkerThread? = null
-                var headNode = threadPool.headNode
+                mCondition.await()
 
-                for (item in 0 until  threadPool.count) {
-                    if (headNode?.value?.isDone == true) {
-                        availableThread = headNode.value
-                        break
+                if (requests.headNode == myRequest) {
+                    if (threadPool.isEmpty()) {
+                        val thread = WorkerThread(runnable = runnable, thread = Thread(), totalNanos = System.currentTimeMillis())
+                        threadPool.add(thread)
+                        thread.runnable.run()
+                        thread.isDone = true
+                        requests.remove(myRequest)
+                        mCondition.signalAll()
+                        return
                     }
 
-                    headNode = headNode
+                    val currentTime: Long = System.currentTimeMillis()
+                    //Verificar também se threadPool está vazia
+                    val availableThread: WorkerThread? = threadPool.find { it.isDone }
+                    if (availableThread != null) {
+                        if(currentTime - availableThread.totalNanos > keepAliveTime.toLong(DurationUnit.MICROSECONDS)) {
+                            threadPool.remove(availableThread)
+                        } else {
+                            availableThread.isDone = false
+                            availableThread.runnable = runnable
+                            availableThread.runnable.run()
+                            availableThread.isDone = true
+                            requests.remove(myRequest)
+                            mCondition.signalAll()
+                        }
+                    }
+
                 }
-
-
 
             } catch (e: InterruptedException) {
 
