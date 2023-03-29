@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
-import kotlin.test.assertFails
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.time.DurationUnit
@@ -92,29 +91,31 @@ class BlockingMessageQueueTest {
     fun `simple test`() {
         val nOfThreads = 5
         val nOfMessages = 4
-        val blockingMessageQueue = BlockingMessageQueue<Int>(nOfThreads)
+        val blockingMessageQueue = BlockingMessageQueue<Int>(nOfMessages)
         val threads = mutableListOf<Thread>()
-        val solutions = AtomicReference<List<Int>?>(emptyList())
+        val solutionsEnqueue = AtomicInteger(0)
+        val solutionsDequeue = AtomicReference<List<Int>>(emptyList())
 
         repeat(nOfThreads) { index ->
             threads.add(
                 Thread {
-                    if(index == nOfThreads - 1) {
-                        blockingMessageQueue.tryDequeue(nOfMessages, 10L.toDuration(DurationUnit.SECONDS)).let {
-                            solutions.set(it)
+                    if (index < nOfThreads - 1)
+                        blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS)).let {
+                            if (it) solutionsEnqueue.incrementAndGet()
                         }
-
-                    } else
-                        blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS))
+                    else
+                        blockingMessageQueue.tryDequeue(nOfMessages, 10L.toDuration(DurationUnit.SECONDS)).let {
+                            solutionsDequeue.set(it)
+                        }
                 }.apply { start() }
             )
         }
 
         threads.forEach { thread -> thread.join() }
-
-        assertEquals(nOfMessages, solutions.get()?.size)
-        assertEquals(true, solutions.get()?.containsAll(listOf(0,1,2,3)))
-        assertEquals(false, solutions.get()?.containsAll(listOf(0,1,2,3,4)))
+        assertEquals(nOfMessages, solutionsEnqueue.get())
+        assertEquals(nOfMessages, solutionsDequeue.get().size)
+        assertEquals(true, solutionsDequeue.get().containsAll(listOf(0,1,2,3)))
+        assertEquals(false, solutionsDequeue.get().containsAll(listOf(0,1,2,3,4)))
     }
 
     @Test

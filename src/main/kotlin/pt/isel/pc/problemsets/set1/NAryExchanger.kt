@@ -16,13 +16,12 @@ class NAryExchanger<T>(groupSize: Int) {
     private val mLock: Lock = ReentrantLock()
     private val mCondition: Condition = mLock.newCondition()
     private var availableGroupSize: Int = groupSize
+    private var requests = mutableListOf<Request>()
+    private var values: MutableList<T> = mutableListOf()
 
     private class Request(
         var isDone: Boolean = false
     )
-
-    private var requests = mutableListOf<Request>()
-    private var values: MutableList<T> = mutableListOf()
 
     @Throws(InterruptedException::class)
     fun exchange(value: T, timeout: Duration): List<T>? {
@@ -43,7 +42,7 @@ class NAryExchanger<T>(groupSize: Int) {
                     requests[index].isDone = true
                 }
 
-                requests = mutableListOf()
+                requests.clear()
 
                 mCondition.signalAll()
                 return values
@@ -60,7 +59,7 @@ class NAryExchanger<T>(groupSize: Int) {
                         return values
                     }
 
-                    values[0] = values[availableGroupSize]
+                    values = values.subList(availableGroupSize, values.size - 1)
                 } catch(e: InterruptedException) {
                     requests.remove(request)
                     if(requests.isNotEmpty()) mCondition.signalAll()
