@@ -2,10 +2,10 @@ package pt.isel.pc.problemsets.set1
 
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
+import pt.isel.pc.problemsets.set1.utils.threadsCreate
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
@@ -13,13 +13,6 @@ import kotlin.time.toDuration
 class NAryExchangerTest {
 
     private val log = LoggerFactory.getLogger(NAryExchangerTest::class.java)
-
-    private fun threadsCreate(nOfThreads: Int, block: (index: Int) -> Any?): List<Thread> =
-        (0 until nOfThreads).map {
-            Thread {
-                block(it)
-            }.apply { start() }
-        }
 
     @Test
     fun `invalid constructor parameters`() {

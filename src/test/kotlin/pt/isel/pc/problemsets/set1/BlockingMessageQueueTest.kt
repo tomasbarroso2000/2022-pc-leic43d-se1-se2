@@ -2,6 +2,7 @@ package pt.isel.pc.problemsets.set1
 
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
+import pt.isel.pc.problemsets.set1.utils.threadsCreate
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
@@ -18,43 +19,29 @@ class BlockingMessageQueueTest {
     fun `invalid constructor parameter`() {
         val nOfThreads = 4
         val blockingMessageQueue = BlockingMessageQueue<Int>(0)
-        val threads = mutableListOf<Thread>()
         val solutions = AtomicInteger(0)
 
-        repeat(nOfThreads) { index ->
-            threads.add(
-                Thread {
-                    blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS)).let {
-                        if(!it) solutions.incrementAndGet()
-                    }
-                }.apply { start() }
-            )
-        }
-
-        threads.forEach { thread -> thread.join() }
+        threadsCreate(nOfThreads) { index ->
+            blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS)).let {
+                if(!it) solutions.incrementAndGet()
+            }
+        }.forEach{ it.join() }
 
         assertEquals(nOfThreads, solutions.get())
-        assertNotSame(nOfThreads+1, solutions.get())
+        assertNotSame(nOfThreads + 1, solutions.get())
     }
 
     @Test
     fun `invalid timeout parameter`() {
         val nOfThreads = 4
         val blockingMessageQueue = BlockingMessageQueue<Int>(nOfThreads)
-        val threads = mutableListOf<Thread>()
         val solutions = AtomicInteger(0)
 
-        repeat(nOfThreads) { index ->
-            threads.add(
-                Thread {
-                    blockingMessageQueue.tryEnqueue(index, 0.toDuration(DurationUnit.SECONDS)).let {
-                        if(!it) solutions.incrementAndGet()
-                    }
-                }.apply { start() }
-            )
-        }
-
-        threads.forEach { thread -> thread.join() }
+        threadsCreate(nOfThreads) { index ->
+            blockingMessageQueue.tryEnqueue(index, 0.toDuration(DurationUnit.SECONDS)).let {
+                if(!it) solutions.incrementAndGet()
+            }
+        }.forEach{ it.join() }
 
         assertEquals(nOfThreads, solutions.get())
         assertNotSame(nOfThreads+1, solutions.get())
@@ -63,26 +50,18 @@ class BlockingMessageQueueTest {
     @Test
     fun `invalid nOfMessages parameter`() {
         val nOfThreads = 5
-        val nOfMessages = 4
+        val nOfMessages = 0
         val blockingMessageQueue = BlockingMessageQueue<Int>(nOfThreads)
-        val threads = mutableListOf<Thread>()
         val solutions = AtomicReference<List<Int>?>(emptyList())
 
-        repeat(nOfThreads) { index ->
-            threads.add(
-                Thread {
-                    if(index == nOfThreads - 1) {
-                        blockingMessageQueue.tryDequeue(0, 10L.toDuration(DurationUnit.SECONDS)).let {
-                            solutions.set(it)
-                        }
-
-                    } else
-                        blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS))
-                }.apply { start() }
-            )
-        }
-
-        threads.forEach { thread -> thread.join() }
+        threadsCreate(nOfThreads) { index ->
+            if(index == nOfThreads - 1) {
+                blockingMessageQueue.tryDequeue(nOfMessages, 10L.toDuration(DurationUnit.SECONDS)).let {
+                    solutions.set(it)
+                }
+            } else
+                blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS))
+        }.forEach{ it.join() }
 
         assertNull(solutions.get())
     }
@@ -92,26 +71,20 @@ class BlockingMessageQueueTest {
         val nOfThreads = 5
         val nOfMessages = 4
         val blockingMessageQueue = BlockingMessageQueue<Int>(nOfMessages)
-        val threads = mutableListOf<Thread>()
         val solutionsEnqueue = AtomicInteger(0)
         val solutionsDequeue = AtomicReference<List<Int>>(emptyList())
 
-        repeat(nOfThreads) { index ->
-            threads.add(
-                Thread {
-                    if (index < nOfThreads - 1)
-                        blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS)).let {
-                            if (it) solutionsEnqueue.incrementAndGet()
-                        }
-                    else
-                        blockingMessageQueue.tryDequeue(nOfMessages, 10L.toDuration(DurationUnit.SECONDS)).let {
-                            solutionsDequeue.set(it)
-                        }
-                }.apply { start() }
-            )
-        }
+        threadsCreate(nOfThreads) { index ->
+            if (index < nOfThreads - 1)
+                blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS)).let {
+                    if (it) solutionsEnqueue.incrementAndGet()
+                }
+            else
+                blockingMessageQueue.tryDequeue(nOfMessages, 10L.toDuration(DurationUnit.SECONDS)).let {
+                    solutionsDequeue.set(it)
+                }
+        }.forEach{ it.join() }
 
-        threads.forEach { thread -> thread.join() }
         assertEquals(nOfMessages, solutionsEnqueue.get())
         assertEquals(nOfMessages, solutionsDequeue.get().size)
         assertEquals(true, solutionsDequeue.get().containsAll(listOf(0,1,2,3)))
@@ -121,24 +94,16 @@ class BlockingMessageQueueTest {
     @Test
     fun `enqueue ends with timeout`() {
         val nOfThreads = 5
-        val nOfMessages = 4
         val blockingMessageQueue = BlockingMessageQueue<Int>(1)
-        val threads = mutableListOf<Thread>()
         val solutions = AtomicInteger(0)
 
-        repeat(nOfThreads) { index ->
-            threads.add(
-                Thread {
-                    blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS)).let {
-                        if (!it) solutions.incrementAndGet()
-                    }
-                }.apply { start() }
-            )
-        }
+        threadsCreate(nOfThreads) { index ->
+            blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS)).let {
+                if (!it) solutions.incrementAndGet()
+            }
+        }.forEach{ it.join() }
 
-        threads.forEach { thread -> thread.join() }
-
-        assertEquals(nOfThreads-1, solutions.get())
+        assertEquals(nOfThreads - 1, solutions.get())
         assertNotSame(nOfThreads, solutions.get())
     }
 
@@ -148,23 +113,17 @@ class BlockingMessageQueueTest {
         val nOfMessages = 4
         val blockingMessageQueue = BlockingMessageQueue<Int>(nOfThreads)
         val threads = mutableListOf<Thread>()
-        val solutions = AtomicReference<List<Int>?>(emptyList())
+        val solutions = AtomicReference<List<Int>?>()
 
-        repeat(nOfThreads) { index ->
-            threads.add(
-                Thread {
-                    if(index == nOfThreads - 1) {
-                        blockingMessageQueue.tryDequeue(nOfMessages, 10L.toDuration(DurationUnit.SECONDS)).let {
-                            solutions.set(it)
-                        }
+        threadsCreate(nOfThreads) { index ->
+            if(index == nOfThreads - 1) {
+                blockingMessageQueue.tryDequeue(nOfMessages, 10L.toDuration(DurationUnit.SECONDS)).let {
+                    solutions.set(it)
+                }
+            } else
+                blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS))
+        }.forEach{ it.join() }
 
-                    } else
-                        blockingMessageQueue.tryEnqueue(index, 10L.toDuration(DurationUnit.SECONDS))
-                }.apply { start() }
-            )
-        }
-
-        threads.forEach { thread -> thread.join() }
         assertNull(solutions.get())
     }
 }
