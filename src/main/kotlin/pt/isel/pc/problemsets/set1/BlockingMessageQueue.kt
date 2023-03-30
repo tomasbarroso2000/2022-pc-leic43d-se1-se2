@@ -2,6 +2,7 @@ package pt.isel.pc.problemsets.set1
 
 import org.slf4j.LoggerFactory
 import pt.isel.pc.problemsets.set1.utils.isZero
+import java.util.LinkedList
 import java.util.concurrent.locks.Condition
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -11,8 +12,8 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
     private val log = LoggerFactory.getLogger(BlockingMessageQueue::class.java)
     private val mLock = ReentrantLock()
 
-    private val enqueue: MutableList<EnqueueRequest<T>> = mutableListOf()
-    private val dequeue: MutableList<DequeueRequest> = mutableListOf()
+    private val enqueue: LinkedList<EnqueueRequest<T>> = LinkedList<EnqueueRequest<T>>()
+    private val dequeue: LinkedList<DequeueRequest> = LinkedList<DequeueRequest>()
     private val messages: MutableList<T> = mutableListOf()
 
     private class DequeueRequest(
@@ -48,7 +49,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
                     remainingNanos = myRequest.condition.awaitNanos(remainingNanos)
 
                     if (myRequest.isDone) {
-                        enqueue.remove(myRequest)
+                        //enqueue.remove(myRequest)
                         signalDequeue()
                         return true
                     }
@@ -97,7 +98,6 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
                     remainingNanos = myRequest.condition.awaitNanos(remainingNanos)
 
                     if (myRequest.isDone) {
-                        dequeue.remove(myRequest)
                         signalEnqueue()
                         return computeMessages(nOfMessages)
                     }
@@ -125,8 +125,9 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
     }
 
     private fun signalDequeue() {
-        dequeue.firstOrNull()?.let { request ->
-            if (request.nOfMessages <= messages.size) {
+        dequeue.peekFirst()?.let {
+            if (it.nOfMessages <= messages.size) {
+                val request = dequeue.poll()
                 request.isDone = true
                 request.condition.signal()
             }
@@ -134,10 +135,11 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
     }
 
     private fun signalEnqueue() {
-        enqueue.firstOrNull()?.let { request ->
+        enqueue.peekFirst()?.let {
             if (messages.size < capacity) {
+                messages.add(it.message)
+                val request = enqueue.poll()
                 request.isDone = true
-                messages.add(request.message)
                 request.condition.signal()
             }
         }

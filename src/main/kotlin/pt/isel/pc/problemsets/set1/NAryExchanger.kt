@@ -2,6 +2,7 @@ package pt.isel.pc.problemsets.set1
 
 import org.slf4j.LoggerFactory
 import pt.isel.pc.problemsets.set1.utils.*
+import java.util.*
 import java.util.concurrent.locks.Condition
 import java.util.concurrent.locks.Lock
 import java.util.concurrent.locks.ReentrantLock
@@ -13,7 +14,7 @@ const val MIN_GROUP_SIZE_VALUE = 2
 class NAryExchanger<T>(private val groupSize: Int) {
     private val log = LoggerFactory.getLogger(NAryExchanger::class.java)
     private val mLock: Lock = ReentrantLock()
-    private val requests: MutableList<Request<T>> = mutableListOf()
+    private val requests: LinkedList<Request<T>> = LinkedList()
 
     private class Request<T>(
         val condition: Condition,
@@ -35,9 +36,11 @@ class NAryExchanger<T>(private val groupSize: Int) {
             //fast path
             if (requests.size == groupSize - 1) {
                 val values = computeValues(value)
-                (0 until groupSize - 1).forEach { index ->
-                    requests[index].values = values
-                    requests[index].condition.signal()
+                repeat(groupSize) {
+                    val request = requests.poll()
+                    request.values = values
+                    request.isDone = true
+                    request.condition.signal()
                 }
                 return values
             }
@@ -51,10 +54,7 @@ class NAryExchanger<T>(private val groupSize: Int) {
                 try {
                     remainingTime = myRequest.condition.awaitNanos(remainingTime)
 
-                    if (myRequest.isDone) {
-                        requests.remove(myRequest)
-                        return myRequest.values
-                    }
+                    if (myRequest.isDone) return myRequest.values
 
                     if (remainingTime <= 0) {
                         // giving-up
@@ -65,12 +65,11 @@ class NAryExchanger<T>(private val groupSize: Int) {
                 } catch (e: InterruptedException) {
                     if (myRequest.isDone) {
                         Thread.currentThread().interrupt()
-                        requests.remove(myRequest)
                         requests.firstOrNull()?.condition?.signal()
                         return myRequest.values
                     }
-
                     requests.firstOrNull()?.condition?.signal()
+                    requests.remove(myRequest)
                     throw e
                 }
             }
@@ -80,10 +79,7 @@ class NAryExchanger<T>(private val groupSize: Int) {
 
     private fun computeValues(value: T): MutableList<T> =
         (0 until groupSize - 1)
-            .map { index ->
-                requests[index].isDone = true
-                requests[index].value
-            }
+            .map { index -> requests[index].value }
             .toMutableList()
             .also { list -> list.add(value) }
 

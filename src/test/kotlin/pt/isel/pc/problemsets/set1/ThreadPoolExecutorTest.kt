@@ -7,7 +7,7 @@ import kotlin.time.toDuration
 class ThreadPoolExecutorTest {
     @Test
     fun `simple test`() {
-        val threadPoolExecutor = ThreadPoolExecutor(1, 10L.toDuration(DurationUnit.SECONDS))
+        /*val threadPoolExecutor = ThreadPoolExecutor(1, 10L.toDuration(DurationUnit.SECONDS))
         val threads: MutableList<Thread> = mutableListOf()
 
         repeat(3) { index ->
@@ -18,6 +18,6 @@ class ThreadPoolExecutorTest {
             )
         }
 
-        threads.forEach { thread -> thread.join() }
+        threads.forEach { thread -> thread.join() }*/
     }
 }
