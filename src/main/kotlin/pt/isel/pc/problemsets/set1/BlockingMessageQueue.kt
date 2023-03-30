@@ -61,14 +61,13 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
                     }
 
                 } catch (e: InterruptedException) {
-                    enqueue.remove(myRequest)
 
                     if (myRequest.isDone) {
                         Thread.currentThread().interrupt()
                         signalDequeue()
                         return true
                     }
-
+                    enqueue.remove(myRequest)
                     signalDequeue()
                     throw e
                 }
@@ -109,14 +108,13 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
                     }
 
                 } catch (e: InterruptedException) {
-                    dequeue.remove(myRequest)
 
                     if (myRequest.isDone) {
                         Thread.currentThread().interrupt()
                         signalEnqueue()
                         return computeMessages(nOfMessages)
                     }
-
+                    dequeue.remove(myRequest)
                     signalEnqueue()
                     throw e
                 }
