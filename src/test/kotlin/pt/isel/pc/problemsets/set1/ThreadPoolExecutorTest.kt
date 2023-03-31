@@ -1,23 +1,28 @@
 package pt.isel.pc.problemsets.set1
 
 import org.junit.jupiter.api.Test
+import pt.isel.pc.problemsets.set1.utils.threadsCreate
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.test.assertEquals
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
 class ThreadPoolExecutorTest {
     @Test
     fun `simple test`() {
-        val threadPoolExecutor = ThreadPoolExecutor(2, 10L.toDuration(DurationUnit.SECONDS))
-        val threads: MutableList<Thread> = mutableListOf()
+        val nOfThreads: Int = 4
+        val maxThreadPoolSize: Int = 2
+        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, 3000.toDuration(DurationUnit.MILLISECONDS))
+        val solutions: AtomicInteger = AtomicInteger(0)
 
-        repeat(10) { index ->
-            threads.add(
-                Thread {
-                    threadPoolExecutor.execute { println("Hello World {$index}") }
-                }.apply { start() }
-            )
-        }
+        threadsCreate(nOfThreads) { index ->
+            threadPoolExecutor.execute {
+                Thread.sleep(2000)
+                println("Hello World {$index}")
+            }
+            solutions.incrementAndGet()
+        }.forEach{ it.join() }
 
-        threads.forEach { thread -> thread.join() }
+        assertEquals(nOfThreads, solutions.get())
     }
 }
