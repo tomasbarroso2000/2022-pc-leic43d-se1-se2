@@ -11,13 +11,13 @@ class ThreadPoolExecutorTest {
     @Test
     fun `simple test`() {
         val nOfThreads: Int = 4
-        val maxThreadPoolSize: Int = 2
-        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, 3000.toDuration(DurationUnit.MILLISECONDS))
+        val maxThreadPoolSize: Int = 3
+        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, 10000.toDuration(DurationUnit.MILLISECONDS))
         val solutions: AtomicInteger = AtomicInteger(0)
 
         threadsCreate(nOfThreads) { index ->
             threadPoolExecutor.execute {
-                Thread.sleep(2000)
+                Thread.sleep(4000)
                 println("Hello World {$index}")
             }
             solutions.incrementAndGet()

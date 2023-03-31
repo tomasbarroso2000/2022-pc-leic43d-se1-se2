@@ -20,88 +20,80 @@ class ThreadPoolExecutor(
     private val maxThreadPoolSize: Int,
     private val keepAliveTime: Duration,
 ) {
-
     private val mLock = ReentrantLock()
     private val workerThreads: LinkedList<WorkerThreadRequest> = LinkedList<WorkerThreadRequest>()
     private val workItems: LinkedList<Runnable> = LinkedList<Runnable>()
 
     private class WorkerThreadRequest(
-        var remainingTime: Duration,
         var runnable: Runnable?,
+        val condition: Condition,
     ) { var isDone: Boolean = false }
 
     @Throws(RejectedExecutionException::class)
-    fun execute(runnable: Runnable): Unit {
-        mLock.withLock {
+    fun execute(runnable: Runnable): Unit = mLock.withLock {
+        val myWorkerThread = WorkerThreadRequest(
+            runnable = null,
+            condition = mLock.newCondition()
+        )
 
-            val myWorkerThread = WorkerThreadRequest(remainingTime = keepAliveTime, runnable = null)
-
-            if (workerThreads.size < maxThreadPoolSize) {
-                when {
-                    workerThreads.isEmpty() || !workerThreads.peekFirst().isDone -> {
-                        if (workItems.isEmpty()) myWorkerThread.runnable = runnable
-                        else {
-                            myWorkerThread.runnable = workItems.poll()
-                            workItems.add(runnable)
-                        }
-                        workerThreads.push(myWorkerThread)
+        if (workerThreads.size < maxThreadPoolSize) {
+            when {
+                workerThreads.isEmpty() || !workerThreads.peekFirst().isDone -> {
+                    if (workItems.isEmpty()) myWorkerThread.runnable = runnable
+                    else {
+                        myWorkerThread.runnable = workItems.poll()
+                        workItems.add(runnable)
                     }
-                    else -> workerThreads.peekFirst().runnable =
-                            if (workItems.isEmpty()) runnable
-                            else workItems.poll()
+                    workerThreads.push(myWorkerThread)
                 }
-            } else {
-                workItems.add(runnable)
+                else -> {
+                    workerThreads.peekFirst().runnable =
+                        if (workItems.isEmpty()) runnable
+                        else {
+                            workItems.add(runnable)
+                            workItems.poll()
+                        }
+                }
+            }
+            signalAllThreads()
+        } else {
+            workItems.add(runnable)
+            signalAllThreads()
+        }
+
+        var remainingTime = keepAliveTime.inWholeNanoseconds
+
+        while (workerThreads.size != 0) {
+            remainingTime = myWorkerThread.condition.awaitNanos(remainingTime)
+            //correr runnables
+            if (!myWorkerThread.isDone) {
+                var currentRunnable = myWorkerThread.runnable
+                while (true) {
+                    if (currentRunnable == null) break
+                    else {
+                        myWorkerThread.isDone = true
+                        log.info("running with thread ${myWorkerThread.hashCode()}")
+                        currentRunnable.run()
+                        if (workItems.isNotEmpty()) currentRunnable = workItems.poll()
+                        else {
+                            myWorkerThread.isDone = true
+                            myWorkerThread.runnable = null
+                            break
+                        }
+                    }
+                }
             }
 
-            while (workerThreads.isNotEmpty()) {
-                val workerThread = workerThreads.poll()
-                //val startTime: Duration = currentTimeMillis().toDuration(DurationUnit.NANOSECONDS)
-                val elapsed = measureTimeMillis {
-                    if (!workerThread.remainingTime.isZero) {
-                        val runnable = workerThread.runnable
-                        if (runnable != null) {
-                            Thread {
-                                workerThread.isDone = false
-                                workerLoop(workerThread, runnable)
-                                //workerThread.runnable = null
-                                workerThread.isDone = true
-                            }.start()
-                        }
-                    } else return
-                }
-
-                if (workerThread.remainingTime.inWholeMilliseconds - elapsed <= 0)
-                    workerThread.remainingTime = 0.toDuration(DurationUnit.MILLISECONDS)
-                else
-                    workerThread.remainingTime =
-                        (workerThread.remainingTime.inWholeMilliseconds - elapsed).
-                        toDuration(DurationUnit.MILLISECONDS)
-
-                log.info("time: ${workerThread.remainingTime}")
-                workerThreads.add(workerThread)
+            if (remainingTime <= 0) {
+                workerThreads.remove(myWorkerThread)
             }
         }
+
     }
 
-    fun shutdown(): Unit {
-        TODO()
-    }
-
-    @Throws(InterruptedException::class)
-    fun awaitTermination(timeout: Duration): Boolean {
-        TODO()
-    }
-
-    private fun workerLoop(workerThread: WorkerThreadRequest, runnable: Runnable) {
-        var currentRunnable = runnable
-        while (true) {
-            currentRunnable.run()
-            if (workItems.isNotEmpty()) currentRunnable = workItems.poll()
-            else {
-                //workerThread.runnable = null
-                return
-            }
+    private fun signalAllThreads() {
+        workerThreads.forEach {
+            if (it.runnable == null) it.isDone = true
         }
     }
 }
