@@ -2,8 +2,14 @@ package pt.isel.pc.problemsets.set1
 
 import org.junit.jupiter.api.Test
 import pt.isel.pc.problemsets.set1.utils.threadsCreate
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.system.measureNanoTime
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
@@ -11,12 +17,12 @@ import kotlin.time.toDuration
 class ThreadPoolExecutorTest {
     @Test
     fun `simple test`() {
-        val nRepeats: Int = 4
+        val nRepeats: Int = 2
         val nOfThreads: Int = 4
-        val maxThreadPoolSize: Int = 3
-        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, 5.toDuration(DurationUnit.SECONDS))
+        val maxThreadPoolSize: Int = 4
+        val timeout = 5.seconds
+        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, timeout)
         val solutions: AtomicReference<MutableList<Int>> = AtomicReference(mutableListOf())
-
 
         repeat(nRepeats) {
             threadsCreate(nOfThreads) { index ->
@@ -28,8 +34,25 @@ class ThreadPoolExecutorTest {
             }.forEach{ it.join() }
         }
 
-
         assertEquals(nOfThreads*nRepeats, solutions.get().toMutableList().size)
+    }
+
+    @Test
+    fun `simple test 2`() {
+        val nOfThreads = 4
+        val sem = Semaphore(0)
+        val timeout = 1500.milliseconds
+        val pool = ThreadPoolExecutor(nOfThreads, timeout)
+        val poolThreadIds = ConcurrentHashMap<Thread, Boolean>()
+        repeat(2 * nOfThreads) {
+            pool.execute {
+                Thread.sleep(1000)
+                poolThreadIds[Thread.currentThread()] = true
+                sem.release()
+            }
+        }
+        //assertTrue(sem.tryAcquire(nOfThreads, 3000, TimeUnit.MILLISECONDS))
+        assertEquals(nOfThreads, poolThreadIds.size)
     }
 
     @Test
@@ -50,10 +73,10 @@ class ThreadPoolExecutorTest {
     }
 
     @Test
-    fun `simple test to execute 0 runnable in time due to times out`() {
+    fun `simple test to execute 2 runnable but 1 times out`() {
         val nOfThreads: Int = 2
         val maxThreadPoolSize: Int = 1
-        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, 2.seconds)
+        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, 4.seconds)
         val solutions: AtomicReference<MutableList<Int>> = AtomicReference(mutableListOf())
 
         threadsCreate(nOfThreads) { index ->
@@ -64,23 +87,26 @@ class ThreadPoolExecutorTest {
             }
         }.forEach{ it.join() }
 
-        assertEquals(0, solutions.get().toMutableList().size)
+        assertEquals(1, solutions.get().size)
     }
 
     @Test
-    fun `simple test to execute multiple runnable`() {
+    fun `simple test to execute multiple runnable and keep threads alive for 5 seconds`() {
         val nOfThreads: Int = 4
         val maxThreadPoolSize: Int = 4
-        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, 10.seconds)
+        val timeout = 5.seconds
+        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, timeout)
         val solutions: AtomicReference<MutableList<Int>> = AtomicReference(mutableListOf())
 
-        threadsCreate(nOfThreads) { index ->
-            threadPoolExecutor.execute {
-                println("Hello World {$index}")
-                solutions.get().add(index)
-            }
-        }.forEach{ it.join() }
+        measureNanoTime {
+            threadsCreate(nOfThreads) { index ->
+                threadPoolExecutor.execute {
+                    println("Hello World {$index}")
+                    solutions.get().add(index)
+                }
+            }.forEach{ it.join() }
+        }
 
-        assertEquals(nOfThreads, solutions.get().toMutableList().size)
+        assertEquals(nOfThreads, solutions.get().size)
     }
 }
