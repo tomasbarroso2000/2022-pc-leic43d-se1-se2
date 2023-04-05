@@ -11,8 +11,6 @@ import kotlin.concurrent.withLock
 import kotlin.system.measureNanoTime
 import kotlin.time.Duration
 
-private val log = LoggerFactory.getLogger(ThreadPoolExecutor::class.java)
-
 class ThreadPoolExecutor(
     private val maxThreadPoolSize: Int,
     private val keepAliveTime: Duration,
@@ -24,8 +22,7 @@ class ThreadPoolExecutor(
 
     private class WorkerThreadRequest(
         var workItem: Runnable? = null,
-        val condition: Condition,
-        var remainingTime: Duration,
+        var remainingTime: Long,
     )
 
     private val executorCondition = mLock.newCondition()
@@ -34,22 +31,25 @@ class ThreadPoolExecutor(
     @Throws(RejectedExecutionException::class)
     fun execute(runnable: Runnable): Unit = mLock.withLock {
         val myWorkerThread = WorkerThreadRequest(
-            condition = mLock.newCondition(),
-            remainingTime = keepAliveTime
+            remainingTime = keepAliveTime.inWholeNanoseconds
         )
 
         if (isShutdown) throw RejectedExecutionException()
 
         if (workerThreads.size < maxThreadPoolSize) {
+
             when {
                 workerThreads.isEmpty() || workerThreads.none { it.workItem == null } -> {
                     if (workItems.isNotEmpty()) {
                         myWorkerThread.workItem = workItems.poll()
                         workItems.add(runnable)
-                        workerThreads.push(myWorkerThread)
                     } else {
                         myWorkerThread.workItem = runnable
-                        workerThreads.push(myWorkerThread)
+                    }
+                    workerThreads.push(myWorkerThread)
+                    logger.info("running with thread ${myWorkerThread.hashCode()}")
+                    thread {
+                        myWorkerThread.workItem?.let { workerLoop(it, myWorkerThread.remainingTime) }
                     }
                 }
                 else -> {
@@ -63,63 +63,7 @@ class ThreadPoolExecutor(
             }
         } else {
             workItems.add(runnable)
-            return
         }
-
-        signalWorkerThreads()
-
-        var remainingTime = myWorkerThread.remainingTime.inWholeNanoseconds
-
-        while (true) {
-            if (remainingTime <= 0) {
-                workerThreads.remove(myWorkerThread)
-                return
-            }
-
-            if (workerThreads.firstOrNull { it.workItem != null } == myWorkerThread) {
-
-                thread {
-                    log.info("worker loop with thread ${myWorkerThread.hashCode()}")
-                    myWorkerThread.workItem?.let { remainingTime -= workerLoop(it, remainingTime) }
-                    myWorkerThread.workItem = null
-                }
-            }
-
-            remainingTime = myWorkerThread.condition.awaitNanos(remainingTime)
-        }
-    }
-
-    fun shutdown(): Unit = mLock.withLock {
-        //realizar as verificações todas
-        //ver se ainda á trabalho para fazer
-        //ver se as threads ainda estão a trabalhar mas
-        isShutdown = true
-        //corpo do shutdown
-
-
-
-        //isShutDownDone = true
-        //shutDownCondition.signal()
-    }
-
-    @Throws(InterruptedException::class)
-    fun awaitTermination(timeout: Duration): Boolean {
-        mLock.withLock {
-            var remainingTime = timeout.inWholeNanoseconds
-            while (true) {
-                remainingTime = executorCondition.awaitNanos(remainingTime)
-
-                if (isExecutorDone) return true
-
-                if (remainingTime <= 0) {
-                    //sair timeout
-                }
-            }
-        }
-    }
-
-    private fun signalWorkerThreads() = mLock.withLock {
-        workerThreads.firstOrNull { it.workItem != null }?.condition?.signal()
     }
 
     sealed class GetWorkItemResult {
@@ -136,20 +80,14 @@ class ThreadPoolExecutor(
     }
 
     // Does NOT hold the lock
-    private fun workerLoop(firstRunnable: Runnable, remainingTime: Long): Long {
-        var elapsedTime = 0L
-        var currentRunnable = firstRunnable
-
-        while (true) {
-            if (remainingTime - elapsedTime <= 0) return elapsedTime
-
-            elapsedTime += measureNanoTime{
-                safeRun(currentRunnable)
-            }
-
+    private fun workerLoop(firstRunnable: Runnable, remainingTime: Long) {
+        var currentRunnable: Runnable? = firstRunnable
+        val startTime = System.nanoTime()
+        while ((System.nanoTime() - startTime) < remainingTime) {
+            currentRunnable?.let { safeRun(it) }
             currentRunnable = when (val result = getNextWorkItem()) {
                 is GetWorkItemResult.WorkItem -> result.workItem
-                GetWorkItemResult.Exit -> return elapsedTime
+                GetWorkItemResult.Exit -> null
             }
         }
     }
