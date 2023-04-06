@@ -1,8 +1,7 @@
 package pt.isel.pc.problemsets.set1
 
 import org.slf4j.LoggerFactory
-import pt.isel.pc.problemsets.set1.utils.isPast
-import java.util.LinkedList
+import java.util.*
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.locks.Condition
 import java.util.concurrent.locks.ReentrantLock
@@ -18,51 +17,56 @@ class ThreadPoolExecutor(
     private val mLock = ReentrantLock()
     private val workerThreads: LinkedList<WorkerThreadRequest> = LinkedList<WorkerThreadRequest>()
     private val workItems: LinkedList<Runnable> = LinkedList<Runnable>()
-    private var isShutdown: Boolean = false
 
     private class WorkerThreadRequest(
         var workItem: Runnable? = null,
-        var remainingTime: Long,
+        val condition: Condition,
+        var remainingTime: Long
     )
 
+    private var isShutdown: Boolean = false
     private val executorCondition = mLock.newCondition()
     private val isExecutorDone: Boolean = false
+    private val mCondition = mLock.newCondition()
 
     @Throws(RejectedExecutionException::class)
     fun execute(runnable: Runnable): Unit = mLock.withLock {
+        if (isShutdown) throw RejectedExecutionException("Cannot execute after shutdown")
+
         val myWorkerThread = WorkerThreadRequest(
-            remainingTime = keepAliveTime.inWholeNanoseconds
+            runnable,
+            mLock.newCondition(),
+            keepAliveTime.inWholeNanoseconds
         )
 
-        if (isShutdown) throw RejectedExecutionException()
-
         if (workerThreads.size < maxThreadPoolSize) {
-
             when {
-                workerThreads.isEmpty() || workerThreads.none { it.workItem == null } -> {
+                workerThreads.none { it.workItem == null } -> {
                     if (workItems.isNotEmpty()) {
                         myWorkerThread.workItem = workItems.poll()
                         workItems.add(runnable)
-                    } else {
-                        myWorkerThread.workItem = runnable
                     }
-                    workerThreads.push(myWorkerThread)
-                    logger.info("running with thread ${myWorkerThread.hashCode()}")
+                    workerThreads.add(myWorkerThread)
                     thread {
-                        myWorkerThread.workItem?.let { workerLoop(it, myWorkerThread.remainingTime) }
+                        workerLoop(myWorkerThread)
                     }
                 }
+
                 else -> {
-                    workerThreads.firstOrNull { it.workItem == null }?.workItem =
-                        if (workItems.isEmpty()) runnable
-                        else {
+                    val workerThread = workerThreads.firstOrNull { it.workItem == null }
+                    if (workerThread != null) {
+                        workerThread.workItem = if (workItems.isNotEmpty()) {
                             workItems.add(runnable)
                             workItems.poll()
-                        }
+                        } else runnable
+                        workerThread.condition.signalAll()
+                    }
                 }
             }
+
         } else {
             workItems.add(runnable)
+            workerThreads.firstOrNull { it.workItem == null }?.condition?.signalAll()
         }
     }
 
@@ -71,21 +75,26 @@ class ThreadPoolExecutor(
         class WorkItem(val workItem: Runnable) : GetWorkItemResult()
     }
 
-    private fun getNextWorkItem(): GetWorkItemResult = mLock.withLock {
-        return if (workItems.isNotEmpty()) {
+    private fun getNextWorkItem(workerThread: WorkerThreadRequest, elapsed: Long): GetWorkItemResult = mLock.withLock {
+        workerThread.remainingTime -= elapsed
+        if (workItems.isNotEmpty()) {
             GetWorkItemResult.WorkItem(workItems.poll())
         } else {
+            workerThread.remainingTime = workerThread.condition.awaitNanos(workerThread.remainingTime)
+            workerThread.workItem = null
             GetWorkItemResult.Exit
         }
     }
 
     // Does NOT hold the lock
-    private fun workerLoop(firstRunnable: Runnable, remainingTime: Long) {
-        var currentRunnable: Runnable? = firstRunnable
-        val startTime = System.nanoTime()
-        while ((System.nanoTime() - startTime) < remainingTime) {
-            currentRunnable?.let { safeRun(it) }
-            currentRunnable = when (val result = getNextWorkItem()) {
+    private fun workerLoop(workerThread: WorkerThreadRequest) {
+        var currentRunnable: Runnable? = workerThread.workItem
+        logger.info("running with thread ${workerThread.hashCode()}")
+        while (workerThread.remainingTime > 0) {
+            val elapsed = if (currentRunnable != null) safeRun(currentRunnable)
+                            else 0L
+
+            currentRunnable = when (val result = getNextWorkItem(workerThread, elapsed)) {
                 is GetWorkItemResult.WorkItem -> result.workItem
                 GetWorkItemResult.Exit -> null
             }
@@ -95,13 +104,13 @@ class ThreadPoolExecutor(
     companion object {
         private val logger = LoggerFactory.getLogger(ThreadPoolExecutor::class.java)
 
-        private fun safeRun(runnable: Runnable) {
+        private fun safeRun(runnable: Runnable): Long =
             try {
-                runnable.run()
+                measureNanoTime { runnable.run() }
             } catch (ex: Throwable) {
                 logger.warn("Unexpected exception while running work item, ignoring it")
+                0L
                 // ignoring exception
             }
-        }
     }
 }
