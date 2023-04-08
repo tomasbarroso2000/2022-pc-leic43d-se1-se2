@@ -9,27 +9,33 @@ import kotlin.concurrent.withLock
 import kotlin.time.Duration
 
 class BlockingMessageQueue<T>(private val capacity: Int) {
-    private val log = LoggerFactory.getLogger(BlockingMessageQueue::class.java)
+
+    init {
+        require(capacity > 0) {"capacity must be higher than zero"}
+    }
+
+    companion object {
+        private val log = LoggerFactory.getLogger(BlockingMessageQueue::class.java)
+    }
+
     private val mLock = ReentrantLock()
 
     private val enqueue: LinkedList<EnqueueRequest<T>> = LinkedList<EnqueueRequest<T>>()
     private val dequeue: LinkedList<DequeueRequest> = LinkedList<DequeueRequest>()
-    private val messages: MutableList<T> = mutableListOf()
+    private val messages: LinkedList<T> = LinkedList<T>()
 
-    private class DequeueRequest(
-        val condition: Condition,
-        val nOfMessages: Int = 0,
-    ) { var isDone: Boolean = false }
+    private class DequeueRequest(val condition: Condition, val nOfMessages: Int = 0) {
+        var isDone: Boolean = false
+    }
 
-    private class EnqueueRequest<T>(
-        val condition: Condition,
-        val message: T,
-    ) { var isDone: Boolean = false }
+    private class EnqueueRequest<T>(val condition: Condition, val message: T) {
+        var isDone: Boolean = false
+    }
 
     @Throws(InterruptedException::class)
     fun tryEnqueue(message: T, timeout: Duration): Boolean {
         mLock.withLock {
-            if (timeout.isZero || capacity <= 0) return false
+            require(!timeout.isZero) {"timeout must be higher than zero"}
 
             //fast path
             if (enqueue.isEmpty() && messages.size < capacity) {
@@ -48,11 +54,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
                 try {
                     remainingNanos = myRequest.condition.awaitNanos(remainingNanos)
 
-                    if (myRequest.isDone) {
-                        //enqueue.remove(myRequest)
-                        signalDequeue()
-                        return true
-                    }
+                    if (myRequest.isDone) return true
 
                     if (remainingNanos <= 0) {
                         // giving-up
@@ -61,10 +63,8 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
                     }
 
                 } catch (e: InterruptedException) {
-
                     if (myRequest.isDone) {
                         Thread.currentThread().interrupt()
-                        signalDequeue()
                         return true
                     }
                     enqueue.remove(myRequest)
@@ -78,7 +78,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
     @Throws(InterruptedException::class)
     fun tryDequeue(nOfMessages: Int, timeout: Duration): List<T>? {
         mLock.withLock {
-            if (timeout.isZero || nOfMessages <= 0 || capacity <= 0) return null
+            require(!timeout.isZero && nOfMessages > 0) {"timeout and number of messages must be higher than zero"}
 
             //fast-path
             if (dequeue.isEmpty() && messages.size >= nOfMessages) {
@@ -96,10 +96,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
                 try {
                     remainingNanos = myRequest.condition.awaitNanos(remainingNanos)
 
-                    if (myRequest.isDone) {
-                        signalEnqueue()
-                        return computeMessages(nOfMessages)
-                    }
+                    if (myRequest.isDone) return computeMessages(nOfMessages)
 
                     if (remainingNanos <= 0) {
                         // giving-up
@@ -111,7 +108,6 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
 
                     if (myRequest.isDone) {
                         Thread.currentThread().interrupt()
-                        signalEnqueue()
                         return computeMessages(nOfMessages)
                     }
                     dequeue.remove(myRequest)
@@ -143,11 +139,6 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
         }
     }
 
-    private fun computeMessages(nOfMessages: Int): MutableList<T> {
-        val temp: MutableList<T> = mutableListOf()
-        repeat(nOfMessages) {
-            messages.removeFirstOrNull()?.let { temp.add(it) }
-        }
-        return temp
-    }
+    private fun computeMessages(nOfMessages: Int): List<T> =
+        (0 until nOfMessages).map { messages.poll() }
 }

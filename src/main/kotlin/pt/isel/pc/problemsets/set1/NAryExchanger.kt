@@ -11,42 +11,45 @@ import kotlin.time.Duration
 
 const val MIN_GROUP_SIZE_VALUE = 2
 
+
 class NAryExchanger<T>(private val groupSize: Int) {
-    private val log = LoggerFactory.getLogger(NAryExchanger::class.java)
+
+    init {
+        require(groupSize >= MIN_GROUP_SIZE_VALUE) {"Number of group size must be greater or equal than two" }
+    }
+
+    companion object {
+        private val log = LoggerFactory.getLogger(NAryExchanger::class.java)
+    }
+
     private val mLock: Lock = ReentrantLock()
     private val requests: LinkedList<Request<T>> = LinkedList()
 
-    private class Request<T>(
-        val condition: Condition,
-        val value: T,
-    ) {
+    private class Request<T>(val condition: Condition, val value: T) {
         var isDone: Boolean = false
-        var values: MutableList<T> = mutableListOf()
+        var values: List<T> = listOf()
     }
 
     @Throws(InterruptedException::class)
     fun exchange(value: T, timeout: Duration): List<T>? {
-
         mLock.withLock {
+            require(!timeout.isZero) {"Timeout must be higher than zero"}
 
-            if (groupSize <= MIN_GROUP_SIZE_VALUE ||
-                timeout.isZero
-            ) return null
+            val myRequest: Request<T> = Request(mLock.newCondition(), value)
+            requests.add(myRequest)
 
             //fast path
-            if (requests.size == groupSize - 1) {
-                val values = computeValues(value)
-                repeat(groupSize) {
+            if (requests.size == groupSize) {
+                val values = computeValues()
+                repeat(groupSize - 1) {
                     val request = requests.poll()
                     request.values = values
                     request.isDone = true
                     request.condition.signal()
                 }
+                requests.remove(myRequest)
                 return values
             }
-
-            val myRequest: Request<T> = Request(mLock.newCondition(), value)
-            requests.add(myRequest)
 
             var remainingTime: Long = timeout.inWholeNanoseconds
 
@@ -65,10 +68,8 @@ class NAryExchanger<T>(private val groupSize: Int) {
                 } catch (e: InterruptedException) {
                     if (myRequest.isDone) {
                         Thread.currentThread().interrupt()
-                        requests.firstOrNull()?.condition?.signal()
                         return myRequest.values
                     }
-                    requests.firstOrNull()?.condition?.signal()
                     requests.remove(myRequest)
                     throw e
                 }
@@ -77,10 +78,7 @@ class NAryExchanger<T>(private val groupSize: Int) {
 
     }
 
-    private fun computeValues(value: T): MutableList<T> =
-        (0 until groupSize - 1)
-            .map { index -> requests[index].value }
-            .toMutableList()
-            .also { list -> list.add(value) }
+    private fun computeValues(): List<T> =
+        (0 until groupSize).map { index -> requests[index].value }
 
 }

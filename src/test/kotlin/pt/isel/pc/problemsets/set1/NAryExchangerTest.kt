@@ -6,27 +6,42 @@ import pt.isel.pc.problemsets.set1.utils.threadsCreate
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
-import kotlin.time.DurationUnit
-import kotlin.time.toDuration
+import kotlin.time.Duration.Companion.seconds
 
 class NAryExchangerTest {
 
     private val log = LoggerFactory.getLogger(NAryExchangerTest::class.java)
 
     @Test
-    fun `invalid constructor parameters`() {
-        val nOfThreads = 4
-        val nAryExchanger = NAryExchanger<Int>(0)
-        val solutions = AtomicInteger(0)
+    fun `invalid NAryExchanger constructor`() {
+        assertFailsWith<IllegalArgumentException> {
+            val nOfThreads = 4
+            val nAryExchanger = NAryExchanger<Int>(0)
+            val solutions = AtomicInteger(0)
 
-        threadsCreate(nOfThreads) { index ->
-            nAryExchanger.exchange(index, 10L.toDuration(DurationUnit.SECONDS))?.let {
-                solutions.incrementAndGet()
+            threadsCreate(nOfThreads) { index ->
+                nAryExchanger.exchange(index, 5.seconds)?.let {
+                    solutions.incrementAndGet()
+                }
             }
-        }.forEach{it.join()}
+        }
+    }
 
-        assertEquals(0, solutions.get())
+    @Test
+    fun `invalid NAryExchanger exchanger timeout`() {
+            val nOfThreads = 4
+            val nAryExchanger = NAryExchanger<Int>(nOfThreads)
+            val solutions = AtomicInteger(0)
+
+            threadsCreate(nOfThreads) { index ->
+                assertFailsWith<IllegalArgumentException> {
+                    nAryExchanger.exchange(index, 0.seconds)?.let {
+                        solutions.incrementAndGet()
+                    }
+                }
+            }
     }
 
     @Test
@@ -35,15 +50,16 @@ class NAryExchangerTest {
         val nExchangerUnits = 4
         val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
         val solutionsList = AtomicReference<List<Int>>()
+        val checkList1: List<Int> = (0 until nOfThreads).toList()
 
         threadsCreate(nOfThreads) { index ->
-            nAryExchanger.exchange(index, 10L.toDuration(DurationUnit.SECONDS))?.let {
+            nAryExchanger.exchange(index, 5.seconds)?.let {
                 solutionsList.set(it)
             }
-        }.forEach{ it.join() }
+        }
 
         assertEquals(nExchangerUnits, solutionsList.get().size)
-        assertTrue(solutionsList.get().containsAll((0..3).toList()))
+        assertTrue(solutionsList.get().containsAll(checkList1))
     }
 
     @Test
@@ -51,29 +67,27 @@ class NAryExchangerTest {
         val nOfThreads = 4
         val nExchangerUnits = 4
         val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
-        val threads = mutableListOf<Thread>()
-        val solutions = AtomicInteger(0)
-        val solutionsList1 = AtomicReference<List<Int>>()
+        val solutionsList1 = AtomicReference<List<Int>>(emptyList())
         val solutionsList2 = AtomicReference<List<Int>>()
+        val checkList1: List<Int> = (0 until nOfThreads).toList()
+        val checkList2: List<Int> = (nOfThreads until nOfThreads * 2).toList()
 
         threadsCreate(nOfThreads) { index ->
-            nAryExchanger.exchange(index, 10L.toDuration(DurationUnit.SECONDS))?.let {
-                solutions.incrementAndGet()
+            nAryExchanger.exchange(index, 5.seconds)?.let {
                 solutionsList1.set(it)
             }
-        }.forEach{ it.join() }
+        }
 
         threadsCreate(nOfThreads) { index ->
-            nAryExchanger.exchange(nExchangerUnits + index, 10L.toDuration(DurationUnit.SECONDS))?.let {
-                solutions.incrementAndGet()
+            nAryExchanger.exchange(nExchangerUnits + index, 5.seconds)?.let {
                 solutionsList2.set(it)
             }
-        }.forEach{ it.join() }
+        }
 
         assertEquals(solutionsList1.get().size, nExchangerUnits)
-        assert(solutionsList1.get().containsAll((0..3).toList()))
+        assert(solutionsList1.get().containsAll(checkList1))
         assertEquals(solutionsList2.get().size, nExchangerUnits)
-        assert(solutionsList2.get().containsAll((4..7).toList()))
+        assert(solutionsList2.get().containsAll(checkList2))
     }
 
     @Test
@@ -81,15 +95,14 @@ class NAryExchangerTest {
         val nOfThreads = 3
         val nExchangerUnits = 4
         val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
-        val threads = mutableListOf<Thread>()
         val solutions = AtomicInteger(0)
 
         threadsCreate(nOfThreads) { index ->
-            nAryExchanger.exchange(index, 10L.toDuration(DurationUnit.SECONDS)).let {
+            nAryExchanger.exchange(index, 5.seconds).let {
                 if (it == null)
                     solutions.incrementAndGet()
             }
-        }.forEach{ it.join() }
+        }
 
         assertEquals(nOfThreads, solutions.get())
     }
