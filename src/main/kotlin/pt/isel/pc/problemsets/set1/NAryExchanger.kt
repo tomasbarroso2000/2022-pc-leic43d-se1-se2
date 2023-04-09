@@ -9,9 +9,6 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
 
-const val MIN_GROUP_SIZE_VALUE = 2
-
-
 class NAryExchanger<T>(private val groupSize: Int) {
 
     init {
@@ -20,6 +17,7 @@ class NAryExchanger<T>(private val groupSize: Int) {
 
     companion object {
         private val log = LoggerFactory.getLogger(NAryExchanger::class.java)
+        const val MIN_GROUP_SIZE_VALUE = 2
     }
 
     private val mLock: Lock = ReentrantLock()

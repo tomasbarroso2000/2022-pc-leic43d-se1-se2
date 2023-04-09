@@ -10,12 +10,10 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.DurationUnit
-import kotlin.time.toDuration
 
-class BlockingMessageQueueTest {
+class BlockingMessageQueueTests {
 
-    private val log = LoggerFactory.getLogger(BlockingMessageQueueTest::class.java)
+    private val log = LoggerFactory.getLogger(BlockingMessageQueueTests::class.java)
 
     @Test
     fun `invalid constructor parameter`() {

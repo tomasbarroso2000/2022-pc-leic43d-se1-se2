@@ -10,9 +10,9 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
-class NAryExchangerTest {
+class NAryExchangerTests {
 
-    private val log = LoggerFactory.getLogger(NAryExchangerTest::class.java)
+    private val log = LoggerFactory.getLogger(NAryExchangerTests::class.java)
 
     @Test
     fun `invalid NAryExchanger constructor`() {

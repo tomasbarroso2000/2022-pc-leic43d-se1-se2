@@ -10,7 +10,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
-class ThreadPoolExecutorTest {
+class ThreadPoolExecutorTests {
     @Test
     fun `invalid ThreadPoolExecutor constructor`() {
         assertFailsWith<IllegalArgumentException> {

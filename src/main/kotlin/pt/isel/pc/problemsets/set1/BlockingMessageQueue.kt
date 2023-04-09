@@ -78,7 +78,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
     @Throws(InterruptedException::class)
     fun tryDequeue(nOfMessages: Int, timeout: Duration): List<T>? {
         mLock.withLock {
-            require(!timeout.isZero && nOfMessages > 0) {"timeout and number of messages must be higher than zero"}
+            require(!timeout.isZero && nOfMessages > 0 && nOfMessages <= capacity) {"timeout must be higher than zero and number of messages must be higher than 0 and lower or equal than the capacity"}
 
             //fast-path
             if (dequeue.isEmpty() && messages.size >= nOfMessages) {
