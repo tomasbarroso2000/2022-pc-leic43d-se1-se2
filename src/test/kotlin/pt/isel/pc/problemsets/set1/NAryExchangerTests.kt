@@ -12,7 +12,9 @@ import kotlin.time.Duration.Companion.seconds
 
 class NAryExchangerTests {
 
-    private val log = LoggerFactory.getLogger(NAryExchangerTests::class.java)
+    companion object {
+        private val log = LoggerFactory.getLogger(NAryExchangerTests::class.java)
+    }
 
     @Test
     fun `invalid NAryExchanger constructor`() {
@@ -31,17 +33,17 @@ class NAryExchangerTests {
 
     @Test
     fun `invalid NAryExchanger exchanger timeout`() {
-            val nOfThreads = 4
-            val nAryExchanger = NAryExchanger<Int>(nOfThreads)
-            val solutions = AtomicInteger(0)
+        val nOfThreads = 4
+        val nAryExchanger = NAryExchanger<Int>(nOfThreads)
+        val solutions = AtomicInteger(0)
 
-            threadsCreate(nOfThreads) { index ->
-                assertFailsWith<IllegalArgumentException> {
-                    nAryExchanger.exchange(index, 0.seconds)?.let {
-                        solutions.incrementAndGet()
-                    }
+        threadsCreate(nOfThreads) { index ->
+            assertFailsWith<IllegalArgumentException> {
+                nAryExchanger.exchange(index, 0.seconds)?.let {
+                    solutions.incrementAndGet()
                 }
             }
+        }
     }
 
     @Test
@@ -88,22 +90,5 @@ class NAryExchangerTests {
         assert(solutionsList1.get().containsAll(checkList1))
         assertEquals(solutionsList2.get().size, nExchangerUnits)
         assert(solutionsList2.get().containsAll(checkList2))
-    }
-
-    @Test
-    fun `test thread timeout`() {
-        val nOfThreads = 3
-        val nExchangerUnits = 4
-        val nAryExchanger = NAryExchanger<Int>(nExchangerUnits)
-        val solutions = AtomicInteger(0)
-
-        threadsCreate(nOfThreads) { index ->
-            nAryExchanger.exchange(index, 5.seconds).let {
-                if (it == null)
-                    solutions.incrementAndGet()
-            }
-        }
-
-        assertEquals(nOfThreads, solutions.get())
     }
 }

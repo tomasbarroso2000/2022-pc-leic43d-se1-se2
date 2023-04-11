@@ -1,14 +1,18 @@
 package pt.isel.pc.problemsets.set1.utils
 
-import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 typealias TestFunction = (Int, () -> Boolean) -> Unit
 
 class TestHelper(
-    private val deadline: Instant
+    duration: Duration,
 ) {
+
+    private val deadline = Instant.now().plusMillis(duration.inWholeMilliseconds)
+
     private val failures = ConcurrentLinkedQueue<AssertionError>()
     private val errors = ConcurrentLinkedQueue<Exception>()
     private val threads = ConcurrentLinkedQueue<Thread>()
@@ -31,6 +35,23 @@ class TestHelper(
         threads.add(th)
     }
 
+    fun thread(block: () -> Unit): Thread {
+        val th = Thread {
+            try {
+                block()
+            } catch (e: InterruptedException) {
+                // ignore
+            } catch (e: AssertionError) {
+                failures.add(e)
+            } catch (e: Exception) {
+                errors.add(e)
+            }
+        }
+        th.start()
+        threads.add(th)
+        return th
+    }
+
     fun createAndStartMultiple(nOfThreads: Int, block: TestFunction) =
         repeat(nOfThreads) { createAndStart(it, block) }
 
@@ -38,8 +59,8 @@ class TestHelper(
     fun join() {
         val deadlineForJoin = deadline.plusMillis(2000)
         for (th in threads) {
-            val timeout = Duration.between(Instant.now(), deadlineForJoin)
-            th.join(timeout.toMillis())
+            val timeout = (deadlineForJoin.epochSecond - Instant.now().epochSecond).seconds
+            th.join(timeout.inWholeMilliseconds)
             if (th.isAlive) {
                 throw AssertionError("Thread '$th' did not end in the expected time")
             }

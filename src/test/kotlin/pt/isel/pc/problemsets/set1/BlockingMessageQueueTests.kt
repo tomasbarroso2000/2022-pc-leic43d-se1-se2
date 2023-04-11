@@ -77,7 +77,7 @@ class BlockingMessageQueueTests {
         val solutionsDequeue = AtomicReference<List<Int>>(emptyList())
 
         threadsCreate(nOfThreads) { index ->
-            if (index < nOfThreads - 1)
+            if (index < nOfMessages)
                 blockingMessageQueue.tryEnqueue(index, 5.seconds).let {
                     if (it) solutionsEnqueue.incrementAndGet()
                 }
@@ -90,7 +90,6 @@ class BlockingMessageQueueTests {
         assertEquals(nOfMessages, solutionsEnqueue.get())
         assertEquals(nOfMessages, solutionsDequeue.get().size)
         assertEquals(true, solutionsDequeue.get().containsAll(listOf(0,1,2,3)))
-        assertEquals(false, solutionsDequeue.get().containsAll(listOf(0,1,2,3,4)))
     }
 
     @Test

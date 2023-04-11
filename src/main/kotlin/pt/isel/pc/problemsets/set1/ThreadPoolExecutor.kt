@@ -2,12 +2,13 @@ package pt.isel.pc.problemsets.set1
 
 import org.slf4j.LoggerFactory
 import pt.isel.pc.problemsets.set1.utils.isZero
-import java.util.*
+import java.util.concurrent.Callable
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
+import java.util.*
 
 class ThreadPoolExecutor(
     private val maxThreadPoolSize: Int,
@@ -21,7 +22,11 @@ class ThreadPoolExecutor(
     private val workerThreads: LinkedList<WorkerThreadRequest> = LinkedList<WorkerThreadRequest>()
     private val workItems: LinkedList<Runnable> = LinkedList<Runnable>()
 
-    private class WorkerThreadRequest(var workItem: Runnable? = null, var remainingTime: Long)
+    private class WorkerThreadRequest(
+        var workItem: Runnable? = null,
+        var remainingTime: Long,
+        var thread: Thread? = null
+    )
 
     private var isShutdown: Boolean = false
     private val executorCondition = mLock.newCondition()
@@ -31,7 +36,7 @@ class ThreadPoolExecutor(
     fun execute(runnable: Runnable): Unit = mLock.withLock {
         if (isShutdown) throw RejectedExecutionException("Cannot execute after shutdown")
 
-        val myWorkerThread = WorkerThreadRequest(runnable, keepAliveTime.inWholeNanoseconds)
+        val myWorkerThread = WorkerThreadRequest(runnable, keepAliveTime.inWholeNanoseconds, Thread {})
 
         if (workerThreads.size < maxThreadPoolSize) {
             when {
@@ -41,7 +46,7 @@ class ThreadPoolExecutor(
                         workItems.add(runnable)
                     }
                     workerThreads.add(myWorkerThread)
-                    thread {
+                    myWorkerThread.thread = thread {
                         workerLoop(myWorkerThread)
                     }
                     if (myWorkerThread.remainingTime <= 0) workerThreads.remove(myWorkerThread)
@@ -67,14 +72,21 @@ class ThreadPoolExecutor(
     }
 
     fun shutdown(): Unit = mLock.withLock {
+        //termina imediatamente todas as threads?
         isShutdown = true
+        workerThreads.forEach {
+            it.thread?.interrupt()
+        }
+        workItems.clear()
+        workerThreads.clear()
     }
 
     @Throws(InterruptedException::class)
     fun awaitTermination(timeout: Duration): Boolean {
         mLock.withLock {
+            isShutdown = true
             //fast path
-            if (isExecutorDone) return true
+            if (isExecutorDone) return false
 
             //wait path
             var remainingTime = timeout.inWholeNanoseconds
@@ -100,6 +112,8 @@ class ThreadPoolExecutor(
             }
         }
     }
+
+    fun <T> execute(callable: Callable<T>): Future<T> = Future.execute(callable)
 
     sealed class GetWorkItemResult {
         object Exit : GetWorkItemResult()
