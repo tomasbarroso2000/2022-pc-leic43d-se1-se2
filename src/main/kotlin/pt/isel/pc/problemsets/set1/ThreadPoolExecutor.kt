@@ -113,7 +113,17 @@ class ThreadPoolExecutor(
         }
     }
 
-    fun <T> execute(callable: Callable<T>): Future<T> = Future.execute(callable)
+    fun <T> execute(callable: Callable<T>): Future<T> = mLock.withLock {
+        val runnable: Runnable =
+            try {
+                Runnable { callable.call() }
+            } catch (e: Exception) {
+                logger.warn("$e")
+                throw e
+            }
+        execute(runnable)
+        return Future.execute(callable)
+    }
 
     sealed class GetWorkItemResult {
         object Exit : GetWorkItemResult()

@@ -95,7 +95,7 @@ class FutureTests {
 
         val future: Future<HttpResponse<String>> = Future.execute {
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString()).get()
-        } as Future<HttpResponse<String>>
+        }
 
         future.get(5000, TimeUnit.MILLISECONDS).let{
             log.info(it.body())

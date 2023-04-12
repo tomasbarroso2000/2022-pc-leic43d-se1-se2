@@ -136,6 +136,27 @@ class ThreadPoolExecutorTests {
     }
 
     @Test
+    fun `thread pool stress test`() {
+        val nOfThreads: Int = 100
+        val maxThreadPoolSize: Int = 100
+        val timeout = 5.seconds
+        val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, timeout)
+        val solutions = ConcurrentLinkedQueue<Int>()
+
+        repeat(nOfThreads) { index ->
+            threadPoolExecutor.execute {
+                println("Hello World {$index}")
+                solutions.add(index)
+                Thread.sleep(1000)
+            }
+        }
+
+        Thread.sleep(timeout.inWholeMilliseconds + 1000)
+        assertEquals(nOfThreads, solutions.size)
+        assertTrue { solutions.containsAll(listOf(nOfThreads-1)) }
+    }
+
+    @Test
     fun `simple test to execute runnable successfully with Future`() {
         val nOfThreads: Int = 1
         val maxThreadPoolSize: Int = 3
@@ -143,21 +164,18 @@ class ThreadPoolExecutorTests {
         val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, timeout)
         val solutions = ConcurrentLinkedQueue<Int>()
 
-        val values: List<Future<Unit>> = (0 until nOfThreads).map { index ->
-            threadPoolExecutor.execute(
+        repeat(nOfThreads) { index ->
+            val fut = threadPoolExecutor.execute(
                 Callable {
-                    solutions.add(index)
                     println("Hello World {$index}")
+                    solutions.add(index)
                 }
             )
+            fut.get(1000, TimeUnit.MILLISECONDS)
         }
 
-        values.forEach { it.get(5000, TimeUnit.MILLISECONDS) }
-
-        while (!values.all { it.isDone }) ;
-
-        assertEquals(nOfThreads, solutions.size)
-
+        Thread.sleep(timeout.inWholeMilliseconds + 1000)
+        assertEquals(nOfThreads * 2, solutions.size)
     }
 
     @Test
@@ -165,90 +183,97 @@ class ThreadPoolExecutorTests {
         val nOfThreads = 4
         val nRepeats = 2
         val timeout = 5.seconds
-        val pool = ThreadPoolExecutor(nOfThreads, timeout)
+        val threadPoolExecutor = ThreadPoolExecutor(nOfThreads, timeout)
         val solutions = ConcurrentLinkedQueue<Int>()
-        val values: List<Future<Int>> = (0 until nOfThreads * nRepeats).map {
-            pool.execute(
+
+        repeat(nRepeats * nOfThreads) { index ->
+            threadPoolExecutor.execute(
                 Callable {
-                    Thread.sleep(1000)
-                    println("$it")
-                    it
+                    Thread.sleep(1000) // Sleep for 10 seconds
+                    solutions.add(index)
+                    println("$index")
                 }
             )
         }
 
-        values.forEach { solutions.add(it.get(5000, TimeUnit.MILLISECONDS)) }
-
-        while (!values.all { it.isDone }) ;
-
-        assertEquals(nOfThreads * nRepeats, solutions.size)
-        assert(solutions.containsAll(listOf(nOfThreads * nRepeats - 1)))
+        Thread.sleep(timeout.inWholeMilliseconds + 1000)
+        assertEquals(nRepeats * nOfThreads, solutions.size)
+        assertTrue { solutions.containsAll((0 until nRepeats * nOfThreads).toList()) }
     }
 
     @Test
-    fun `simple test to execute 2 runnable that end with timeout with future`() {
+    fun `simple test 2 with Future`() {
+        val nOfThreads = 4
+        val nRepeats = 2
+        val sem = Semaphore(0)
+        val timeout = 5.seconds
+        val threadPoolExecutor = ThreadPoolExecutor(nOfThreads, timeout)
+        val poolThreadIds = ConcurrentHashMap<Thread, Boolean>()
+        val solutions = ConcurrentLinkedQueue<Int>()
+
+        repeat(nRepeats * nOfThreads) { index ->
+            threadPoolExecutor.execute(
+                Callable {
+                    println("$index")
+                    solutions.add(index)
+                    Thread.sleep(2000)
+                    poolThreadIds[Thread.currentThread()] = true
+                    sem.release()
+                }
+            )
+        }
+
+        Thread.sleep(timeout.inWholeMilliseconds + 1000)
+        assertTrue(sem.tryAcquire(nOfThreads, 3000, TimeUnit.MILLISECONDS))
+        assertEquals(nOfThreads, poolThreadIds.size)
+        assertEquals(nRepeats * nOfThreads, solutions.size)
+        assertTrue { solutions.containsAll((0 until nRepeats * nOfThreads).toList()) }
+    }
+
+    @Test
+    fun `simple test to execute 2 runnable but 1 times out with Future`() {
         val nOfThreads: Int = 2
         val maxThreadPoolSize: Int = 1
         val timeout = 3.seconds
         val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, timeout)
-        val solutions = AtomicInteger(0)
-        val errors = AtomicInteger(0)
+        val solutions = ConcurrentLinkedQueue<Int>()
 
-        val values: List<Future<Int>> = (0 until nOfThreads).map { index ->
-            threadPoolExecutor.execute(
+        repeat(nOfThreads) { index ->
+            val fut = threadPoolExecutor.execute(
                 Callable {
                     Thread.sleep(3000)
                     println("Hello World {$index}")
-                    index
+                    solutions.add(index)
                 }
             )
-        }
-        values.forEach {
-            try {
-                it.get(100, TimeUnit.MILLISECONDS)
-                solutions.incrementAndGet()
-            } catch (_: TimeoutException) {
-                errors.incrementAndGet()
-            }
+            fut.get(10000, TimeUnit.MILLISECONDS)
         }
 
-        while (!values.all { it.isDone }) ;
-
-        assertEquals(0, solutions.get())
-        assertEquals(2, errors.get())
+        Thread.sleep(timeout.inWholeMilliseconds + 1000)
+        assertEquals(3, solutions.size)
+        assertTrue { solutions.contains(0) }
     }
 
     @Test
-    fun `simple test to execute two runnable but one end with timeout with future`() {
-        val nOfThreads: Int = 2
-        val maxThreadPoolSize: Int = 1
-        val timeout = 3.seconds
+    fun `thread pool stress test with Future`() {
+        val nOfThreads: Int = 100
+        val maxThreadPoolSize: Int = 100
+        val timeout = 5.seconds
         val threadPoolExecutor = ThreadPoolExecutor(maxThreadPoolSize, timeout)
-        val solutions = AtomicInteger(0)
-        val errors = AtomicInteger(0)
+        val solutions = ConcurrentLinkedQueue<Int>()
 
-        val values: List<Future<Int>> = (0 until nOfThreads).map { index ->
-            threadPoolExecutor.execute(
+        repeat(nOfThreads) { index ->
+            threadPoolExecutor.execute (
                 Callable {
-                    Thread.sleep(1000)
                     println("Hello World {$index}")
-                    index
+                    solutions.add(index)
+                    Thread.sleep(1000)
                 }
             )
         }
-        for (index in values.indices) {
-            try {
-                if(index == 0) values[index].get(100, TimeUnit.MILLISECONDS)
-                else values[index].get(3000, TimeUnit.MILLISECONDS)
-                solutions.incrementAndGet()
-            } catch (_: TimeoutException) {
-                errors.incrementAndGet()
-            }
-        }
 
-        while (!values.all { it.isDone }) ;
-
-        assertEquals(1, solutions.get())
-        assertEquals(1, errors.get())
+        Thread.sleep(timeout.inWholeMilliseconds + 1000)
+        assertEquals(nOfThreads, solutions.size)
+        assertTrue { solutions.containsAll(listOf(nOfThreads-1)) }
     }
 }

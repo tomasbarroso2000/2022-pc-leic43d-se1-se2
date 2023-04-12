@@ -1,6 +1,7 @@
 package pt.isel.pc.problemsets.set1
 
 import org.slf4j.LoggerFactory
+import pt.isel.pc.problemsets.set1.utils.isZero
 import java.util.concurrent.Callable
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
@@ -36,17 +37,6 @@ class Future<V>(private val callable : Callable<V>) : Future<V> {
     private var error : Exception? = null
     private var state = State.ACTIVE
 
-    override fun cancel(mayInterruptIfRunning: Boolean): Boolean = lock.withLock {
-        if (state != State.ACTIVE) return false
-
-        state = State.CANCELLED
-
-        if (mayInterruptIfRunning) thread?.interrupt()
-
-        setError(CancellationException(), State.CANCELLED)
-        true
-    }
-
     private fun set(value: V) = lock.withLock {
         check(state == State.ACTIVE)
         this.value = value
@@ -54,24 +44,58 @@ class Future<V>(private val callable : Callable<V>) : Future<V> {
         condition.signalAll()
     }
 
-    private fun setError(e: Exception, state: State) = lock.withLock {
+    private fun setError(e: Exception) = lock.withLock {
         error = e
-        this.state = state
+        this.state = State.ERROR
         condition.signalAll()
     }
 
-    private fun start() = lock.withLock {
-        check(state == State.ACTIVE)
-        thread = thread {
+    private fun start() {
+        thread = Thread {
             try {
                 set(callable.call())
-            } catch (ee: ExecutionException) {
-                setError(ee, State.ERROR)
-            } catch (ie: InterruptedException) {
-                if (state == State.CANCELLED) setError(CancellationException(), State.CANCELLED)
-                else setError(ie, State.ERROR)
             } catch (e: Exception) {
-                setError(e, State.ERROR)
+                setError(e)
+            }
+        }
+    }
+
+    private fun checkState(timeout: Long) = lock.withLock {
+        if (state == State.ERROR) throw ExecutionException(error)
+
+        if (state == State.CANCELLED) throw CancellationException()
+
+        if (timeout <= 0) throw TimeoutException()
+    }
+
+    private fun get(timeout : Duration): V {
+        lock.withLock {
+            //fast path
+            if (state == State.COMPLETED) return value ?: throw error as Throwable
+
+            checkState(timeout.inWholeNanoseconds)
+
+            //wait path
+            var remainingTime = timeout.inWholeNanoseconds
+
+            while (true) {
+                try {
+                    thread?.start()
+
+                    remainingTime = condition.awaitNanos(remainingTime)
+
+                    if (state == State.COMPLETED) return value ?: throw error as Throwable
+
+                    checkState(remainingTime)
+
+                } catch (e: InterruptedException) {
+                    if (state == State.COMPLETED) {
+                        Thread.currentThread().interrupt()
+                        return value ?: throw error as Throwable
+                    }
+
+                    throw e
+                }
             }
         }
     }
@@ -84,49 +108,20 @@ class Future<V>(private val callable : Callable<V>) : Future<V> {
         return state != State.ACTIVE
     }
 
-    private fun get(timeout : Duration): V {
-        lock.withLock {
-            //fast path
-            if (state == State.COMPLETED)
-                return value ?: throw error as Throwable
-
-            if (state == State.CANCELLED)
-                throw CancellationException()
-
-            //wait path
-            var remainingTime = timeout.inWholeNanoseconds
-
-            while (true) {
-                try {
-                    remainingTime = condition.awaitNanos(remainingTime)
-
-                    if (state == State.COMPLETED)
-                        return value ?: throw error as Throwable
-
-                    if (state == State.CANCELLED || state == State.ERROR)
-                        throw error as Throwable
-
-                    if (remainingTime <= 0)
-                        throw TimeoutException("Timeout")
-
-                } catch (e: InterruptedException) {
-                    if (state == State.COMPLETED) {
-                        Thread.currentThread().interrupt()
-                        return value ?: throw error as Throwable
-                    }
-
-                    if (state == State.CANCELLED || state == State.ERROR)
-                        throw error as Throwable
-
-                    throw e
-                }
-            }
-        }
-    }
-
     override fun get(timeout: Long, unit: TimeUnit): V =
         get(unit.toMillis(timeout).toDuration(DurationUnit.MILLISECONDS))
 
     override fun get(): V = get(Duration.INFINITE)
+
+    override fun cancel(mayInterruptIfRunning: Boolean): Boolean = lock.withLock {
+        if (state != State.ACTIVE) return false
+
+        state = State.CANCELLED
+
+        if (mayInterruptIfRunning) thread?.interrupt()
+
+        condition.signal()
+        true
+    }
 
 }
