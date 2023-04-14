@@ -1,7 +1,6 @@
 package pt.isel.pc.problemsets.set1
 
 import org.slf4j.LoggerFactory
-import pt.isel.pc.problemsets.set1.utils.isZero
 import java.util.concurrent.Callable
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
@@ -9,13 +8,12 @@ import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
-class Future<V>(private val callable : Callable<V>) : Future<V> {
+class Future<V>(val callable : Callable<V>) : Future<V> {
 
     companion object {
         fun <V> execute(callable: Callable<V>): pt.isel.pc.problemsets.set1.Future<V> {
@@ -38,62 +36,62 @@ class Future<V>(private val callable : Callable<V>) : Future<V> {
     private var state = State.ACTIVE
 
     private fun set(value: V) = lock.withLock {
-        check(state == State.ACTIVE)
-        this.value = value
-        state = State.COMPLETED
-        condition.signalAll()
+        if (state == State.ACTIVE) {
+            this.value = value
+            state = State.COMPLETED
+            condition.signalAll()
+        }
     }
 
     private fun setError(e: Exception) = lock.withLock {
-        error = e
-        this.state = State.ERROR
-        condition.signalAll()
+        if (state == State.ACTIVE) {
+            this.error = e
+            this.state = State.ERROR
+            condition.signalAll()
+        }
     }
 
     private fun start() {
-        thread = Thread {
+        this.thread = Thread {
             try {
                 set(callable.call())
             } catch (e: Exception) {
                 setError(e)
             }
         }
+        this.thread?.start()
     }
 
-    private fun checkState(timeout: Long) = lock.withLock {
-        if (state == State.ERROR) throw ExecutionException(error)
-
+    private fun tryGetResult(timeout: Long) : V? {
+        if (state == State.COMPLETED) return value
+        if (state === State.ERROR) throw ExecutionException(error)
         if (state == State.CANCELLED) throw CancellationException()
-
         if (timeout <= 0) throw TimeoutException()
+        return null
     }
 
-    private fun get(timeout : Duration): V {
+    private fun get(timeout: Duration): V {
         lock.withLock {
             //fast path
-            if (state == State.COMPLETED) return value ?: throw error as Throwable
-
-            checkState(timeout.inWholeNanoseconds)
+            val res = tryGetResult(timeout.inWholeNanoseconds)
+            if (res != null) return res
 
             //wait path
             var remainingTime = timeout.inWholeNanoseconds
 
             while (true) {
                 try {
-                    thread?.start()
-
                     remainingTime = condition.awaitNanos(remainingTime)
 
-                    if (state == State.COMPLETED) return value ?: throw error as Throwable
+                    val res = tryGetResult(remainingTime)
 
-                    checkState(remainingTime)
+                    if (res != null) return res
 
                 } catch (e: InterruptedException) {
                     if (state == State.COMPLETED) {
                         Thread.currentThread().interrupt()
                         return value ?: throw error as Throwable
                     }
-
                     throw e
                 }
             }

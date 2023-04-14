@@ -20,7 +20,7 @@ class NAryExchanger<T>(private val groupSize: Int) {
         const val MIN_GROUP_SIZE_VALUE = 2
     }
 
-    private val mLock: Lock = ReentrantLock()
+    private val lock: Lock = ReentrantLock()
     private val requests: LinkedList<Request<T>> = LinkedList()
 
     private class Request<T>(val condition: Condition, val value: T) {
@@ -30,10 +30,10 @@ class NAryExchanger<T>(private val groupSize: Int) {
 
     @Throws(InterruptedException::class)
     fun exchange(value: T, timeout: Duration): List<T>? {
-        mLock.withLock {
+        lock.withLock {
             require(!timeout.isZero) {"Timeout must be higher than zero"}
 
-            val myRequest: Request<T> = Request(mLock.newCondition(), value)
+            val myRequest: Request<T> = Request(lock.newCondition(), value)
             requests.add(myRequest)
 
             //fast path
@@ -76,7 +76,8 @@ class NAryExchanger<T>(private val groupSize: Int) {
 
     }
 
-    private fun computeValues(): List<T> =
+    private fun computeValues(): List<T> = lock.withLock {
         (0 until groupSize).map { index -> requests[index].value }
+    }
 
 }

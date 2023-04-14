@@ -18,7 +18,7 @@ class ThreadPoolExecutor(
         require(maxThreadPoolSize > 0 && !keepAliveTime.isZero)
     }
 
-    private val mLock = ReentrantLock()
+    private val lock = ReentrantLock()
     private val workerThreads: LinkedList<WorkerThreadRequest> = LinkedList<WorkerThreadRequest>()
     private val workItems: LinkedList<Runnable> = LinkedList<Runnable>()
 
@@ -29,11 +29,11 @@ class ThreadPoolExecutor(
     )
 
     private var isShutdown: Boolean = false
-    private val executorCondition = mLock.newCondition()
+    private val executorCondition = lock.newCondition()
     private var isExecutorDone: Boolean = false
 
     @Throws(RejectedExecutionException::class)
-    fun execute(runnable: Runnable): Unit = mLock.withLock {
+    fun execute(runnable: Runnable): Unit = lock.withLock {
         if (isShutdown) throw RejectedExecutionException("Cannot execute after shutdown")
 
         val myWorkerThread = WorkerThreadRequest(runnable, keepAliveTime.inWholeNanoseconds, Thread {})
@@ -49,7 +49,6 @@ class ThreadPoolExecutor(
                     myWorkerThread.thread = thread {
                         workerLoop(myWorkerThread)
                     }
-                    if (myWorkerThread.remainingTime <= 0) workerThreads.remove(myWorkerThread)
                 }
                 else -> {
                     workerThreads.firstOrNull { it.workItem == null }?.let {
@@ -61,18 +60,12 @@ class ThreadPoolExecutor(
                 }
             }
 
-            if (workerThreads.isEmpty()) {
-                isExecutorDone = true
-                executorCondition.signal()
-            }
-
         } else {
             workItems.add(runnable)
         }
     }
 
-    fun shutdown(): Unit = mLock.withLock {
-        //termina imediatamente todas as threads?
+    fun shutdown(): Unit = lock.withLock {
         isShutdown = true
         workerThreads.forEach {
             it.thread?.interrupt()
@@ -83,7 +76,7 @@ class ThreadPoolExecutor(
 
     @Throws(InterruptedException::class)
     fun awaitTermination(timeout: Duration): Boolean {
-        mLock.withLock {
+        lock.withLock {
             isShutdown = true
             //fast path
             if (isExecutorDone) return false
@@ -99,6 +92,7 @@ class ThreadPoolExecutor(
 
                     if (remainingTime <= 0) {
                         finishAll()
+                        logger.info("timeout")
                         return false
                     }
                 } catch(e: InterruptedException) {
@@ -113,16 +107,16 @@ class ThreadPoolExecutor(
         }
     }
 
-    fun <T> execute(callable: Callable<T>): Future<T> = mLock.withLock {
-        val runnable: Runnable =
+    fun <T> execute(callable: Callable<T>): Future<T> {
+        val runnable = Runnable {
             try {
-                Runnable { callable.call() }
+                callable.call()
             } catch (e: Exception) {
-                logger.warn("$e")
-                throw e
+                logger.warn("${e.message}")
             }
+        }
         execute(runnable)
-        return Future.execute(callable)
+        return Future(callable)
     }
 
     sealed class GetWorkItemResult {
@@ -130,13 +124,21 @@ class ThreadPoolExecutor(
         class WorkItem(val workItem: Runnable) : GetWorkItemResult()
     }
 
-    private fun getNextWorkItem(workerThread: WorkerThreadRequest): GetWorkItemResult = mLock.withLock {
+    private fun getNextWorkItem(workerThread: WorkerThreadRequest): GetWorkItemResult = lock.withLock {
         val workItem = workerThread.workItem
         workerThread.workItem = null
         when {
             workItem != null -> GetWorkItemResult.WorkItem(workItem)
             workItems.isNotEmpty() -> GetWorkItemResult.WorkItem(workItems.poll())
             else -> GetWorkItemResult.Exit
+        }
+    }
+
+    private fun signalThreadPoolEnd(workerThread: WorkerThreadRequest) = lock.withLock {
+        workerThreads.remove(workerThread)
+        if (workerThreads.isEmpty()) {
+            isExecutorDone = true
+            executorCondition.signalAll()
         }
     }
 
@@ -156,6 +158,8 @@ class ThreadPoolExecutor(
                 GetWorkItemResult.Exit -> null
             }
         }
+
+        signalThreadPoolEnd(workerThread)
     }
 
     companion object {
@@ -171,7 +175,7 @@ class ThreadPoolExecutor(
         }
     }
 
-    private fun finishAll() {
+    private fun finishAll() = lock.withLock {
         workItems.clear()
         workerThreads.forEach {
             it.workItem = null

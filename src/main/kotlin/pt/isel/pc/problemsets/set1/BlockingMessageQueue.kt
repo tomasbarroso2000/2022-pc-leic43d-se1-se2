@@ -18,7 +18,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
         private val log = LoggerFactory.getLogger(BlockingMessageQueue::class.java)
     }
 
-    private val mLock = ReentrantLock()
+    private val lock = ReentrantLock()
 
     private val enqueue: LinkedList<EnqueueRequest<T>> = LinkedList<EnqueueRequest<T>>()
     private val dequeue: LinkedList<DequeueRequest> = LinkedList<DequeueRequest>()
@@ -34,7 +34,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
 
     @Throws(InterruptedException::class)
     fun tryEnqueue(message: T, timeout: Duration): Boolean {
-        mLock.withLock {
+        lock.withLock {
             require(!timeout.isZero) {"timeout must be higher than zero"}
 
             //fast path
@@ -45,7 +45,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
             }
 
             //wait path
-            val myRequest = EnqueueRequest(mLock.newCondition(), message)
+            val myRequest = EnqueueRequest(lock.newCondition(), message)
             enqueue.add(myRequest)
 
             var remainingNanos: Long = timeout.inWholeNanoseconds
@@ -77,7 +77,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
 
     @Throws(InterruptedException::class)
     fun tryDequeue(nOfMessages: Int, timeout: Duration): List<T>? {
-        mLock.withLock {
+        lock.withLock {
             require(!timeout.isZero && nOfMessages > 0 && nOfMessages <= capacity) {"timeout must be higher than zero and number of messages must be higher than 0 and lower or equal than the capacity"}
 
             //fast-path
@@ -87,7 +87,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
             }
 
             //wait path
-            val myRequest = DequeueRequest(mLock.newCondition(), nOfMessages)
+            val myRequest = DequeueRequest(lock.newCondition(), nOfMessages)
             dequeue.add(myRequest)
 
             var remainingNanos: Long = timeout.inWholeNanoseconds
@@ -118,7 +118,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
         }
     }
 
-    private fun signalDequeue() {
+    private fun signalDequeue() = lock.withLock {
         dequeue.peekFirst()?.let {
             if (it.nOfMessages <= messages.size) {
                 val request = dequeue.poll()
@@ -128,7 +128,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
         }
     }
 
-    private fun signalEnqueue() {
+    private fun signalEnqueue() = lock.withLock {
         enqueue.peekFirst()?.let {
             if (messages.size < capacity) {
                 messages.add(it.message)
@@ -139,6 +139,7 @@ class BlockingMessageQueue<T>(private val capacity: Int) {
         }
     }
 
-    private fun computeMessages(nOfMessages: Int): List<T> =
+    private fun computeMessages(nOfMessages: Int): List<T> = lock.withLock {
         (0 until nOfMessages).map { messages.poll() }
+    }
 }
