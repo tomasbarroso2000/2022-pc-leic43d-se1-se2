@@ -105,16 +105,19 @@ class ThreadPoolExecutor(
     }
 
     fun <T> execute(callable: Callable<T>): Future<T> {
+        val fut = Future<T>()
         val runnable = Runnable {
             try {
-                callable.call()
+                val result = callable.call()
+                fut.set(result)
             } catch (e: Exception) {
-                logger.warn("${e.message}")
+                fut.setError(e)
             }
         }
         execute(runnable)
-        return Future(callable)
+        return fut
     }
+
 
     sealed class GetWorkItemResult {
         object Exit : GetWorkItemResult()

@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.test.assertEquals
@@ -291,11 +292,11 @@ class ThreadPoolExecutorTests {
                     solutions.add(index)
                 }
             )
-            Future.execute(fut.callable).get()
+            fut.get(2000, TimeUnit.MILLISECONDS)
         }
 
         Thread.sleep(timeout.inWholeMilliseconds + 1000)
-        assertEquals(nOfThreads * 2, solutions.size)
+        assertEquals(nOfThreads, solutions.size)
         assert(solutions.contains(0))
     }
 
@@ -315,11 +316,11 @@ class ThreadPoolExecutorTests {
                     solutions.add(index)
                 }
             )
-            Future.execute(fut.callable).get()
+            fut.get(2000, TimeUnit.MILLISECONDS)
         }
 
         Thread.sleep(timeout.inWholeMilliseconds + 1000)
-        assertEquals(nOfThreads * 2, solutions.size)
+        assertEquals(nOfThreads, solutions.size)
         assert(solutions.containsAll(resultList))
     }
 
@@ -328,21 +329,23 @@ class ThreadPoolExecutorTests {
         val nOfThreads = 4
         val nRepeats = 2
         val sem = Semaphore(0)
-        val timeout = 5.seconds
+        val timeout = 10.seconds
         val threadPoolExecutor = ThreadPoolExecutor(nOfThreads, timeout)
         val poolThreadIds = ConcurrentHashMap<Thread, Boolean>()
         val solutions = ConcurrentLinkedQueue<Int>()
 
-        repeat(nOfThreads * nRepeats) { index ->
+        repeat(nOfThreads * nRepeats) {
             val call = Callable {
-                println("$index")
-                solutions.add(index)
-                Thread.sleep(2000)
+                println("$it")
+                solutions.add(it)
+                Thread.sleep(5000)
                 poolThreadIds[Thread.currentThread()] = true
                 sem.release()
             }
 
-            threadPoolExecutor.execute(call)
+            val fut = threadPoolExecutor.execute(call)
+
+            fut.get(10000, TimeUnit.MILLISECONDS)
         }
 
         Thread.sleep(timeout.inWholeMilliseconds + 1000)
@@ -361,13 +364,19 @@ class ThreadPoolExecutorTests {
         val solutions = ConcurrentLinkedQueue<Int>()
 
         repeat(nOfThreads) { index ->
-            threadPoolExecutor.execute(
+            val fut = threadPoolExecutor.execute(
                 Callable {
                     Thread.sleep(3000)
                     println("Hello World {$index}")
                     solutions.add(index)
                 }
             )
+            if (index == 0)
+                fut.get(5000, TimeUnit.MILLISECONDS)
+            else
+                assertFailsWith<TimeoutException> {
+                    fut.get(5000, TimeUnit.MILLISECONDS)
+                }
         }
 
         Thread.sleep(timeout.inWholeMilliseconds + 1000)
@@ -384,13 +393,14 @@ class ThreadPoolExecutorTests {
         val solutions = ConcurrentLinkedQueue<Int>()
 
         repeat(nOfThreads) { index ->
-            threadPoolExecutor.execute (
+            val fut = threadPoolExecutor.execute (
                 Callable {
                     println("Hello World {$index}")
                     solutions.add(index)
                     Thread.sleep(1000)
                 }
             )
+            fut.get(2000, TimeUnit.MILLISECONDS)
         }
 
         Thread.sleep(timeout.inWholeMilliseconds + 1000)

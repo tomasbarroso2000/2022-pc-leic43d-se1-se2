@@ -1,7 +1,6 @@
 package pt.isel.pc.problemsets.set1
 
 import org.slf4j.LoggerFactory
-import java.util.concurrent.Callable
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
@@ -13,15 +12,9 @@ import kotlin.time.Duration
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
-class Future<V>(val callable : Callable<V>) : Future<V> {
+class Future<V> : Future<V> {
 
     companion object {
-        fun <V> execute(callable: Callable<V>): pt.isel.pc.problemsets.set1.Future<V> {
-            val fut = Future(callable)
-            fut.start()
-            return fut
-        }
-
         private val log = LoggerFactory.getLogger(Future::class.java)
     }
 
@@ -35,7 +28,7 @@ class Future<V>(val callable : Callable<V>) : Future<V> {
     private var error : Exception? = null
     private var state = State.ACTIVE
 
-    private fun set(value: V) = lock.withLock {
+    internal fun set(value: V) = lock.withLock {
         if (state == State.ACTIVE) {
             this.value = value
             state = State.COMPLETED
@@ -43,23 +36,12 @@ class Future<V>(val callable : Callable<V>) : Future<V> {
         }
     }
 
-    private fun setError(e: Exception) = lock.withLock {
+    internal fun setError(e: Exception) = lock.withLock {
         if (state == State.ACTIVE) {
             this.error = e
             this.state = State.ERROR
             condition.signalAll()
         }
-    }
-
-    private fun start() {
-        this.thread = Thread {
-            try {
-                set(callable.call())
-            } catch (e: Exception) {
-                setError(e)
-            }
-        }
-        this.thread?.start()
     }
 
     private fun tryGetResult(timeout: Long) : V? {
