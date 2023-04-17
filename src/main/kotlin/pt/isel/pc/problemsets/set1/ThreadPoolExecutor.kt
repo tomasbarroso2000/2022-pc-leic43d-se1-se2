@@ -66,18 +66,15 @@ class ThreadPoolExecutor(
     }
 
     fun shutdown(): Unit = lock.withLock {
-        isShutdown = true
-        workerThreads.forEach {
-            it.thread?.interrupt()
-        }
-        workItems.clear()
-        workerThreads.clear()
+        if (!isShutdown)
+            isShutdown = true
     }
 
     @Throws(InterruptedException::class)
     fun awaitTermination(timeout: Duration): Boolean {
         lock.withLock {
-            isShutdown = true
+            require(isShutdown) {"ThreadPoolExecutor is not in shutdown mode"}
+
             //fast path
             if (isExecutorDone) return false
 
@@ -176,11 +173,10 @@ class ThreadPoolExecutor(
     }
 
     private fun finishAll() = lock.withLock {
-        workItems.clear()
         workerThreads.forEach {
-            it.workItem = null
-            it.remainingTime = 0
+            it.thread?.interrupt()
         }
+        workItems.clear()
         workerThreads.clear()
     }
 }

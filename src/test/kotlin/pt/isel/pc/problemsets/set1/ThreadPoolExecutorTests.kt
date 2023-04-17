@@ -2,6 +2,7 @@ package pt.isel.pc.problemsets.set1
 
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
+import pt.isel.pc.problemsets.set1.utils.threadsCreate
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -9,6 +10,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -95,6 +97,56 @@ class ThreadPoolExecutorTests {
     }
 
     @Test
+    fun `simple test to show thread pool running`() {
+        val timeout = 5.seconds
+        val threadPoolExecutor = ThreadPoolExecutor(4, timeout)
+        val mainTid = Thread.currentThread().id
+        println("[T$mainTid] :: STARTING ::")
+
+        for (n in 0..15) {
+            threadPoolExecutor.execute {
+                val tid = Thread.currentThread().id
+                println("[T$tid] executing task #$n")
+                if (n == 3) {
+                    throw Exception("Emotional damage!")
+                }
+                Thread.sleep(50)
+            }
+        }
+
+        println("[T$mainTid] :: WAITING ::")
+        threadPoolExecutor.shutdown()
+
+        if (!threadPoolExecutor.awaitTermination(timeout)) {
+            println("[T$mainTid] :: timed out ::")
+        } else {
+            println("[T$mainTid] :: DONE ::")
+        }
+    }
+
+    @Test
+    fun `not so simple test`() {
+        val nOfThreads = 4
+        val sem = Semaphore(0)
+        val timeout = 5.seconds
+        val threadPoolExecutor = ThreadPoolExecutor(4, timeout)
+        val poolThreadIds = ConcurrentHashMap<Thread, Boolean>()
+        val ths = List(2 * nOfThreads) {
+            thread {
+                threadPoolExecutor.execute {
+                    Thread.sleep(1000)
+                    poolThreadIds[Thread.currentThread()] = true
+                    sem.release()
+                }
+            }
+        }
+        ths.forEach { it.join(1000) }
+        assertTrue(ths.all { !it.isAlive })
+        assertTrue(sem.tryAcquire(2 * nOfThreads, 3000, TimeUnit.MILLISECONDS))
+        assertEquals(nOfThreads, poolThreadIds.size)
+    }
+
+    @Test
     fun `simple test to execute 2 runnable but 1 times out`() {
         val nOfThreads = 2
         val maxThreadPoolSize = 1
@@ -150,6 +202,8 @@ class ThreadPoolExecutorTests {
             }
         }
 
+        executor.shutdown()
+
         assert(executor.awaitTermination(10.seconds))
         assertEquals(nThreads, solutions.get())
     }
@@ -168,6 +222,8 @@ class ThreadPoolExecutorTests {
                 solutions.incrementAndGet()
             }
         }
+
+        executor.shutdown()
 
         assertFalse(executor.awaitTermination(5.seconds))
         assertEquals(nThreads, solutions.get())
