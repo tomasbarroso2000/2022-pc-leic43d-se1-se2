@@ -1,13 +1,17 @@
 # PC - Verão 22/23 - Série de exercícios
 
-Repositório com a resolução das séries do aluno [editar com número].
+Repositório com a resolução das séries do aluno 48333.
 Por favor, crie também o ficheiro `ids.md` contendo apenas o seu número de aluno.
 
 ## Observações
 
-Coloque aqui alguma observação que achar relevante (e.g. exercício que não ficou resolvido, exercício que precisa de melhoramentos).
+A implementação do método "fun <T> execute(callable: Callable<T>): Future<T>" precisa de ajustes
+em relação ao tratamento de exceções do Future neste caso se existir algum problema e for necessário atualizar o Future com esse erro
+"chamada onError", não acontece nada.
 
 ## Documentação técnica
 
-Coloque aqui a documentação técnica que achar relevante para a compreensão da sua resolução.
-Seja sucinto e completo.
+Tanto quanto possivel, os exercicios da série foram implementados com a técnica
+delegação de execução/kernel-style e com Specific Notification para
+tornar mais eficiente a sinalização de uma thread especifica, que se encontra bloqueada em vez de
+sinalizar todas as threads existentes
