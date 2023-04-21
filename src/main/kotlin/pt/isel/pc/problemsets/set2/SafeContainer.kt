@@ -1,13 +1,11 @@
 package pt.isel.pc.problemsets.set2
 
-import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicReference
 
 class SafeValue<T>(val value: T, var lives: Int)
 
 class SafeContainer<T>(values: Array<SafeValue<T>>) {
     private class Data<T>(val index: Int, val safeValues: Array<SafeValue<T>>)
-
     private val data: AtomicReference<Data<T>> = AtomicReference(Data(0, values))
 
     fun consume(): T? {
