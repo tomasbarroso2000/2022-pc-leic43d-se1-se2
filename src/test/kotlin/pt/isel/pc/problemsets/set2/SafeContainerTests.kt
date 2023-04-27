@@ -59,4 +59,31 @@ class SafeContainerTests {
         assert ( values.filter { it == "isel" }.size == 3 && values.filter { it == "pc" }.size == 4)
         assertEquals(1, errors.get())
     }
+
+    @Test
+    fun `stress test`() {
+        val nThreads = 100
+        val nLives = 3
+        val solutions = AtomicInteger(0)
+        val errors = AtomicInteger(0)
+        val values = mutableListOf<String>()
+        val content: Array<SafeValue<String>> = (0 until nThreads).map {
+            SafeValue("isel", nLives)
+        }.toTypedArray()
+        val safeContainer = SafeContainer(content)
+
+        threadsCreate(nThreads) {
+            val result = safeContainer.consume()
+            println(result)
+            if (result == null) errors.incrementAndGet()
+            else {
+                solutions.incrementAndGet()
+                values.add(result)
+            }
+        }
+
+        assertEquals(nThreads * nLives, solutions.get())
+        assert ( values.filter { it == "isel" }.size == nLives)
+        assertEquals(0, errors.get())
+    }
 }

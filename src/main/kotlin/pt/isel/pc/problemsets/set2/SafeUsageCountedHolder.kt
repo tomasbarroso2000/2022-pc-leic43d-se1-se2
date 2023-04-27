@@ -27,9 +27,8 @@ class SafeUsageCountedHolder<T : Closeable>(value: T) {
             if (newData.useCounter == 0 && data.compareAndSet(observedData, Data(null, 0))) {
                 newData.value?.close()
                 return
-            } else if (data.compareAndSet(observedData, newData)) {
-                return
             }
+            if (data.compareAndSet(observedData, newData)) return
         }
     }
 }

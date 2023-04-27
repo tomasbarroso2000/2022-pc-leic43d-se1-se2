@@ -67,7 +67,10 @@ class CyclicBarrier(private val parties: Int, private val barrierAction: Runnabl
             val id = parties - requests.size - 1
             var remainingTime = timeout.inWholeNanoseconds
 
-            if (remainingTime <= 0 ) return id
+            if (remainingTime <= 0 ) {
+                barrierAction?.let { safeRun(it) }
+                return id
+            }
 
             if (requests.size == parties - 1) {
                 state = State.COMPLETED

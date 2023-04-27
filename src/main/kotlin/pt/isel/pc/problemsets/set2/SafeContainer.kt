@@ -5,6 +5,11 @@ import java.util.concurrent.atomic.AtomicReference
 class SafeValue<T>(val value: T, var lives: Int)
 
 class SafeContainer<T>(values: Array<SafeValue<T>>) {
+
+    init {
+        require(values.isNotEmpty()) { "values cannot be empty" }
+    }
+
     private class Data<T>(val index: Int, val safeValues: Array<SafeValue<T>>)
     private val data: AtomicReference<Data<T>> = AtomicReference(Data(0, values))
 
@@ -12,7 +17,7 @@ class SafeContainer<T>(values: Array<SafeValue<T>>) {
         while (true) {
             val observedData = data.get()
             do {
-                if (observedData.index >= observedData.safeValues.size) return null
+                if (observedData == data.get() && observedData.index >= observedData.safeValues.size) return null
 
                 if (observedData.safeValues[observedData.index].lives > 0 &&
                     data.compareAndSet(observedData, computeData(observedData))
