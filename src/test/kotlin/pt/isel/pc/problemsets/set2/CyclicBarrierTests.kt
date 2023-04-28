@@ -15,7 +15,7 @@ import kotlin.test.fail
 
 class CyclicBarrierTests {
     @Test
-    fun testAwait() {
+    fun `test await`() {
         val barrier = CyclicBarrier(3)
         val results = mutableListOf<Int>()
         val nOfThreads = 3
@@ -28,7 +28,7 @@ class CyclicBarrierTests {
     }
 
     @Test
-    fun testAwait2() {
+    fun `test await 2`() {
         val runnable = Runnable {
             Thread.sleep(2000)
             println("Hello World")
@@ -45,7 +45,7 @@ class CyclicBarrierTests {
     }
 
     @Test
-    fun testAwaitWithTimeout() {
+    fun `testAwaitWithTimeout`() {
         val barrier = CyclicBarrier(3)
         val results = mutableListOf<Int>()
         val nOfThreads = 2

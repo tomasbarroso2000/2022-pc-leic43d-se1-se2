@@ -1,22 +1,24 @@
 package pt.isel.pc.problemsets.set2
 
+import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
-import java.util.concurrent.Future
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
-import kotlin.concurrent.withLock
 
 private val lock = ReentrantLock()
 
-private class Data<T>(val fut: Future<T>, val index: Int) {
+private val log = LoggerFactory.getLogger(CompletableFuture::class.java)
+
+private class Data<T>(val fut: CompletableFuture<T>, val index: Int) {
     var result: T? = null
     var exception: Exception? = null
 }
 
-fun <T> any(futures: List<Future<T>>): CompletableFuture<T> {
+fun <T> any(futures: List<CompletableFuture<T>>): CompletableFuture<T> {
+    require(futures.isNotEmpty()) { "list cannot be empty" }
+
     val data: AtomicReference<List<Data<T>>> = AtomicReference(makeList(futures))
 
     while (true) {
@@ -27,13 +29,15 @@ fun <T> any(futures: List<Future<T>>): CompletableFuture<T> {
             return CompletableFuture.completedFuture(futureDone.result)
         }
         if (observedData == data.get() && futuresWithError.size == observedData.size) {
+            observedData.map { it.exception }.forEach {
+                log.info("$it")
+            }
             return completeWithExceptions(observedData)
         }
     }
-
 }
 
-private fun <T> makeList(futures: List<Future<T>>): List<Data<T>> =
+private fun <T> makeList(futures: List<CompletableFuture<T>>): List<Data<T>> =
     (futures.indices).map { index ->
         val data = Data(futures[index], index)
         thread {

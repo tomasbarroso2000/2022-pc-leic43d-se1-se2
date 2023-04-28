@@ -105,7 +105,6 @@ class CyclicBarrier(private val parties: Int, private val barrierAction: Runnabl
         (0 until parties - 1).forEach { index ->
             val req = requests[index]
             req.isDone = true
-            req.runnable?.let { safeRun(it) }
             req.condition.signal()
         }
     }
