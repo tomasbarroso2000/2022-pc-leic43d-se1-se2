@@ -2,11 +2,9 @@ package pt.isel.pc.problemsets.set2
 
 import org.slf4j.LoggerFactory
 import pt.isel.pc.problemsets.set1.ThreadPoolExecutor
-import java.util.LinkedList
 import java.util.concurrent.BrokenBarrierException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.concurrent.locks.Condition
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.jvm.Throws
@@ -14,23 +12,19 @@ import kotlin.time.Duration
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
-class CyclicBarrier(private val parties: Int, private val barrierAction: Runnable? = null) {
-
+class CyclicBarrier(
+    private val parties: Int,
+    private val barrierAction: Runnable? = null
+) {
     init { require(parties > 0) { "parties must be higher than 0" } }
 
+    private var totalCyclicItems = 0
+
     private val lock = ReentrantLock()
-    private val requests = LinkedList<Request>()
-    private class Request(
-        val id: Int,
-        val condition: Condition,
-        val runnable: Runnable? = null
-    ) {
-        var isDone: Boolean = false
-        var isBroken: Boolean = false
-    }
-    private var state = State.ACTIVE
+    private val condition = lock.newCondition()
 
     private enum class State { ACTIVE, COMPLETED, BROKEN }
+    private var state = State.ACTIVE
 
     @Throws(InterruptedException::class, BrokenBarrierException::class, TimeoutException::class)
     fun await(timeout: Long, unit: TimeUnit): Int = lock.withLock {
@@ -42,21 +36,23 @@ class CyclicBarrier(private val parties: Int, private val barrierAction: Runnabl
         await(Duration.INFINITE)
     }
 
-    fun getNumberWaiting(): Int = lock.withLock { requests.size }
+    val getNumberWaiting: Int
+        get() = lock.withLock { totalCyclicItems }
 
-    fun getParties(): Int = parties
+    val getParties: Int
+        get() = parties
 
-    fun isBroken(): Boolean =  lock.withLock { state == State.BROKEN }
+    val isBroken: Boolean
+        get() = lock.withLock { state == State.BROKEN }
 
     fun reset() = lock.withLock {
         if (state == State.ACTIVE) {
-            requests.forEach {
-                it.isBroken = true
-                it.condition.signal()
-            }
+            state = State.BROKEN
+            condition.signalAll()
+        } else {
+            totalCyclicItems = 0
+            state = State.ACTIVE
         }
-        requests.clear()
-        state = State.ACTIVE
     }
 
     private fun await(timeout: Duration): Int {
@@ -64,48 +60,42 @@ class CyclicBarrier(private val parties: Int, private val barrierAction: Runnabl
             //fast path
             if (state == State.BROKEN) throw BrokenBarrierException()
 
-            val id = parties - requests.size - 1
+            val id = parties - totalCyclicItems - 1
             var remainingTime = timeout.inWholeNanoseconds
 
-            if (remainingTime <= 0 ) {
+            if (remainingTime <= 0) {
                 barrierAction?.let { safeRun(it) }
                 return id
             }
 
-            if (requests.size == parties - 1) {
+            if (totalCyclicItems == parties - 1) {
                 state = State.COMPLETED
-                signalAll()
-                reset()
+                condition.signalAll()
+                totalCyclicItems -= parties - 1
                 barrierAction?.let { safeRun(it) }
                 return id
             }
 
             //wait path
 
-            val myRequest = Request(id, lock.newCondition(), barrierAction)
-            requests.add(myRequest)
+            totalCyclicItems++
 
             while (true) {
                 try {
-                    remainingTime = myRequest.condition.awaitNanos(remainingTime)
+                    remainingTime = condition.awaitNanos(remainingTime)
 
-                    if (myRequest.isDone) return myRequest.id
-                    if (myRequest.isBroken) throw BrokenBarrierException()
+                    if (state == State.COMPLETED) return id
+                    if (state == State.BROKEN) throw BrokenBarrierException()
                     if (remainingTime <= 0) throw TimeoutException()
 
                 } catch (ie: InterruptedException) {
-                    if (myRequest.isDone) return myRequest.id
+                    if (state == State.COMPLETED){
+                        Thread.currentThread().interrupt()
+                        return id
+                    }
                     throw ie
                 }
             }
-        }
-    }
-
-    private fun signalAll() = lock.withLock {
-        (0 until parties - 1).forEach { index ->
-            val req = requests[index]
-            req.isDone = true
-            req.condition.signal()
         }
     }
 
@@ -120,5 +110,4 @@ class CyclicBarrier(private val parties: Int, private val barrierAction: Runnabl
             }
         }
     }
-
 }

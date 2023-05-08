@@ -1,60 +1,44 @@
 package pt.isel.pc.problemsets.set2
 
-import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionException
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.thread
 
-private val lock = ReentrantLock()
+class CustomException(val exceptions: List<Throwable>): Exception()
 
-private val log = LoggerFactory.getLogger(CompletableFuture::class.java)
-
-private class Data<T>(val fut: CompletableFuture<T>, val index: Int) {
-    var result: T? = null
-    var exception: Exception? = null
-}
+private class Data<T>(
+    val success: CompletableFuture<T>? = null,
+    val failures: List<Throwable> = mutableListOf()
+)
 
 fun <T> any(futures: List<CompletableFuture<T>>): CompletableFuture<T> {
-    require(futures.isNotEmpty()) { "list cannot be empty" }
+    require(futures.isNotEmpty()) { "futures list cannot be empty" }
 
-    val data: AtomicReference<List<Data<T>>> = AtomicReference(makeList(futures))
+    val cf = CompletableFuture<T>()
+    val data: AtomicReference<Data<T>> = AtomicReference(Data())
 
-    while (true) {
-        val observedData = data.get()
-        val futureDone = observedData.firstOrNull { it.result != null }
-        val futuresWithError = observedData.filter { it.exception != null }
-        if (observedData == data.get() && futureDone != null) {
-            return CompletableFuture.completedFuture(futureDone.result)
-        }
-        if (observedData == data.get() && futuresWithError.size == observedData.size) {
-            observedData.map { it.exception }.forEach {
-                log.info("$it")
-            }
-            return completeWithExceptions(observedData)
+    futures.forEach { fut ->
+        fut.whenCompleteAsync { v, e ->
+            do {
+                val observedData = data.get()
+                val newErrors = observedData.failures + e
+                if (e != null && data.compareAndSet(observedData, Data(null, newErrors))) {
+                    if (newErrors.size == futures.size)
+                        cf.completeExceptionally(CustomException(newErrors))
+                    break
+                }
+                if (v != null && observedData.success == null && data.compareAndSet(observedData, Data(success = fut))) {
+                    cf.complete(v)
+                    futures.filter { it != fut }.forEach { it.cancel(true) }
+                    break
+                }
+            } while (!Thread.currentThread().isInterrupted && !data.compareAndSet(observedData, observedData))
         }
     }
-}
 
-private fun <T> makeList(futures: List<CompletableFuture<T>>): List<Data<T>> =
-    (futures.indices).map { index ->
-        val data = Data(futures[index], index)
-        thread {
-            try {
-                val result = data.fut.get()
-                data.result = result
-            } catch (e: Exception) {
-                data.exception = e
-            }
-        }
-        data
+    if (Thread.currentThread().isInterrupted) {
+        futures.forEach { it.cancel(true) }
+        throw InterruptedException("Thread interrupted while waiting for futures to complete")
     }
 
-private fun <T> completeWithExceptions(list: List<Data<T>>): CompletableFuture<T> {
-    val exceptions: List<Exception?> = list.map { it.exception }
-    return CompletableFuture.completedFuture(Unit)
-        .handle { _, throwable ->
-            throw CompletionException(exceptions.joinToString(", "), throwable)
-        }
+    return cf
 }

@@ -11,24 +11,23 @@ class SafeUsageCountedHolder<T : Closeable>(value: T) {
     fun tryStartUse(): T? {
         while (true) {
             val observedData = data.get()
-            if (observedData == data.get() && observedData == null) return null
+            if (observedData.value == null) return null
 
-            if (observedData.value != null && data.compareAndSet(observedData, Data(observedData.value, observedData.useCounter + 1)))
+            if (data.compareAndSet(observedData, Data(observedData.value, observedData.useCounter + 1)))
                 return observedData.value
         }
     }
 
     fun endUse() {
-        while (true) {
+        do {
             val observedData = data.get()
-            if (observedData == data.get() && observedData.useCounter == 0) throw IllegalStateException("Already closed")
+            if (observedData.useCounter == 0) throw IllegalStateException("Already closed")
 
-            val newData = Data(observedData.value, observedData.useCounter - 1)
-            if (newData.useCounter == 0 && data.compareAndSet(observedData, Data(null, 0))) {
-                newData.value?.close()
+            if (observedData.useCounter == 1 && data.compareAndSet(observedData, Data(null, 0))) {
+                observedData.value?.close()
                 return
             }
-            if (data.compareAndSet(observedData, newData)) return
-        }
+
+        } while (!data.compareAndSet(observedData, observedData))
     }
 }

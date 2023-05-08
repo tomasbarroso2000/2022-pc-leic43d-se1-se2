@@ -3,7 +3,6 @@ package pt.isel.pc.problemsets.set2
 import java.util.concurrent.atomic.AtomicReference
 
 class SafeValue<T>(val value: T, var lives: Int)
-
 class SafeContainer<T>(values: Array<SafeValue<T>>) {
 
     init {
@@ -17,11 +16,13 @@ class SafeContainer<T>(values: Array<SafeValue<T>>) {
         while (true) {
             val observedData = data.get()
             do {
-                if (observedData == data.get() && observedData.index >= observedData.safeValues.size) return null
+                if (observedData.index >= observedData.safeValues.size &&
+                    data.compareAndSet(observedData, observedData)
+                    ) return null
 
                 if (observedData.safeValues[observedData.index].lives > 0 &&
                     data.compareAndSet(observedData, computeData(observedData))
-                ) return observedData.safeValues[observedData.index].value
+                    ) return observedData.safeValues[observedData.index].value
 
             } while (data.compareAndSet(observedData, Data(observedData.index + 1, observedData.safeValues)))
         }

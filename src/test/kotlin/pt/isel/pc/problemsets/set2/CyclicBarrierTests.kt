@@ -45,7 +45,26 @@ class CyclicBarrierTests {
     }
 
     @Test
-    fun `testAwaitWithTimeout`() {
+    fun `test await 3`() {
+        val solutions = AtomicInteger(0)
+        val runnable = Runnable {
+            Thread.sleep(2000)
+            println("Hello World")
+            solutions.incrementAndGet()
+        }
+        val barrier = CyclicBarrier(3, runnable)
+        val results = mutableListOf<Int>()
+        val nOfThreads = 6
+
+        threadsCreate(nOfThreads) {
+            barrier.await()
+        }
+
+        assertEquals(2, solutions.get())
+    }
+
+    @Test
+    fun `test await with timeout`() {
         val barrier = CyclicBarrier(3)
         val results = mutableListOf<Int>()
         val nOfThreads = 2
@@ -73,10 +92,13 @@ class CyclicBarrierTests {
                     counter.incrementAndGet()
                 }
             } else {
+                assertEquals(2, barrier.getNumberWaiting)
                 barrier.reset()
             }
         }
 
+        assertEquals(3, barrier.getParties)
         assertEquals(nThreads - 1, counter.get())
+        assertEquals(true, barrier.isBroken)
     }
 }
