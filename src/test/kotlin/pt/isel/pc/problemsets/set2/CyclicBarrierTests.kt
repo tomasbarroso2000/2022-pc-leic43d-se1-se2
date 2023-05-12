@@ -1,8 +1,10 @@
 package pt.isel.pc.problemsets.set2
 
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import pt.isel.pc.problemsets.set1.utils.threadsCreate
 import java.util.concurrent.BrokenBarrierException
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
@@ -99,6 +101,28 @@ class CyclicBarrierTests {
 
         assertEquals(3, barrier.getParties)
         assertEquals(nThreads - 1, counter.get())
-        assertEquals(true, barrier.isBroken)
+        assertTrue(barrier.isBroken)
     }
+
+    @Test
+    fun testCyclicBarrier() {
+        val parties = 3
+        val barrier = CyclicBarrier(parties)
+
+        val results = mutableListOf<Int>()
+
+        threadsCreate(parties) {
+            results.add(barrier.await())
+        }
+
+        assert(results.containsAll(listOf(parties - 1)))
+        assertEquals(0, barrier.getNumberWaiting)
+        assertEquals(parties, barrier.getParties)
+        assertFalse(barrier.isBroken)
+
+        barrier.reset()
+
+        assertFalse(barrier.isBroken)
+    }
+
 }

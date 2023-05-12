@@ -14,6 +14,9 @@ class SafeContainer<T>(values: Array<SafeValue<T>>) {
 
     fun consume(): T? {
         while (true) {
+            if (Thread.interrupted()) {
+                throw InterruptedException()
+            }
             val observedData = data.get()
             do {
                 if (observedData.index >= observedData.safeValues.size &&
@@ -29,10 +32,9 @@ class SafeContainer<T>(values: Array<SafeValue<T>>) {
     }
 
     private fun computeData(observedData: Data<T>): Data<T> {
-        val index = observedData.index
-        val newSafeValues = observedData.safeValues.clone()
-        newSafeValues[index] = SafeValue(newSafeValues[index].value, newSafeValues[index].lives - 1)
-        return Data(observedData.index, newSafeValues)
+        val safeValues = observedData.safeValues.copyOf()
+        val value = safeValues[observedData.index]
+        safeValues[observedData.index] = SafeValue(value.value, value.lives - 1)
+        return Data(observedData.index, safeValues)
     }
-
 }

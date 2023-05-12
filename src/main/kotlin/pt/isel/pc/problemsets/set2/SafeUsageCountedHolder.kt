@@ -15,6 +15,10 @@ class SafeUsageCountedHolder<T : Closeable>(value: T) {
 
             if (data.compareAndSet(observedData, Data(observedData.value, observedData.useCounter + 1)))
                 return observedData.value
+
+            if (Thread.currentThread().isInterrupted) {
+                throw InterruptedException()
+            }
         }
     }
 
@@ -26,6 +30,10 @@ class SafeUsageCountedHolder<T : Closeable>(value: T) {
             if (observedData.useCounter == 1 && data.compareAndSet(observedData, Data(null, 0))) {
                 observedData.value?.close()
                 return
+            }
+
+            if (Thread.currentThread().isInterrupted) {
+                throw InterruptedException()
             }
 
         } while (!data.compareAndSet(observedData, observedData))

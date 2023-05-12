@@ -48,7 +48,7 @@ class CompletableFutureTests {
     }
 
     @Test
-    fun `simple test with exceptions`() {
+    fun `simple test with exception`() {
         val nFutures = 1
         val futures: MutableList<CompletableFuture<Int>> = mutableListOf()
         repeat(nFutures) {
@@ -66,6 +66,8 @@ class CompletableFutureTests {
             compFuture.get()
         } catch (e: Exception) {
             log.info("${e.cause}")
+            val ex = e.cause as CustomException
+            log.info("Exceptions: ${ex.exceptions}")
             assert(e.cause is CustomException)
         }
     }
@@ -89,6 +91,8 @@ class CompletableFutureTests {
             compFuture.get()
         } catch (e: Exception) {
             log.info("${e.cause}")
+            val ex = e.cause as CustomException
+            log.info("Exceptions: ${ex.exceptions}")
             assert(e.cause is CustomException)
         }
     }
@@ -123,6 +127,7 @@ class CompletableFutureTests {
             log.info("${e.cause}")
             assert(e.cause is CustomException)
             val ex = e.cause as CustomException
+            log.info("Exceptions: ${ex.exceptions}")
             assertEquals(3, ex.exceptions.size)
         }
     }
@@ -142,6 +147,7 @@ class CompletableFutureTests {
             log.info("${e.cause}")
             assert(e.cause is CustomException)
             val ex = e.cause as CustomException
+            log.info("Exceptions: ${ex.exceptions}")
             assertEquals(1, ex.exceptions.size)
             assertTrue(ex.exceptions[0].message?.contains("future1 failed") ?: false)
         }
